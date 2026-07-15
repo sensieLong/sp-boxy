@@ -130,25 +130,27 @@ function calculateDielineGeometry(L, W, H) {
         notchRadius, yTopTuck + notchRadius * notchK,
         notchRadius, yTopTuck
     );
-    rAddLine(notchRadius, yTopTuck, L / 2 - 0.4, yTopTuck);
+    rAddLine(notchRadius, yTopTuck, L / 2, yTopTuck);
 
     // Top Tuck Flap - side wing, sized by H (the user's Height input).
-    // Only the top-outer corner is rounded; every other corner stays sharp.
+    // The wing's inner edge sits exactly at x = L/2, the same line as the
+    // box body's side fold, so the crease can run straight through both.
+    // Only the top-outer corner is rounded, widened to the maximum radius
+    // possible - it consumes the entire top edge and outer edge, so the
+    // curve alone spans from the fold line straight to the bottom corner.
+    // Every other corner of the wing stays sharp/straight.
     const wingReach = H;
-    const wingFoldX = L / 2 - 0.4; // also doubles as the fold line between the flap and the wing
-    const wingCornerRadius = Math.min(0.35, wingReach * 0.5);
-    const wingCornerA = { x: L / 2 + wingReach - wingCornerRadius, y: yTopTuck };
-    const wingCornerB = { x: L / 2 + wingReach, y: yTopTuck + wingCornerRadius };
+    const wingFoldX = L / 2; // fold line between the flap body and the wing
+    const wingCornerRadius = wingReach; // maximum possible radius
+    const tipX = L / 2 + wingReach;
 
-    rAddLine(wingFoldX, yTopTuck, wingCornerA.x, wingCornerA.y); // top edge of wing - straight
     rAddCurve(
-        wingCornerA.x, wingCornerA.y,
-        wingCornerA.x + wingCornerRadius * notchK, wingCornerA.y,
-        wingCornerB.x, wingCornerB.y - wingCornerRadius * notchK,
-        wingCornerB.x, wingCornerB.y
-    ); // top-outer corner only - rounded
-    rAddLine(wingCornerB.x, wingCornerB.y, L / 2 + wingReach, yLidTop); // outer edge - straight, sharp corner
-    rAddLine(L / 2 + wingReach, yLidTop, L / 2, yLidTop); // bottom edge back to the fold boundary - straight, sharp corner
+        wingFoldX, yTopTuck,
+        wingFoldX + wingCornerRadius * notchK, yTopTuck,          // tangent along the top edge
+        tipX, yLidTop - wingCornerRadius * notchK,                // tangent down the outer edge
+        tipX, yLidTop
+    ); // top-outer corner only - rounded to max radius
+    rAddLine(tipX, yLidTop, wingFoldX, yLidTop); // bottom edge back to the fold boundary - straight, sharp corner
 
     // Lid Dust Flap (Curved ear)
     rAddCurve(L / 2, yLidTop, L / 2 + dustW, yLidTop, L / 2 + dustW, yLidTop + 0.5, L / 2 + dustW, yLidTop + 1.0);
@@ -231,16 +233,12 @@ function calculateDielineGeometry(L, W, H) {
     addScore(-L / 2, yBaseTop, L / 2, yBaseTop);   // Rear to Base
     addScore(-L / 2, yBaseBtm, L / 2, yBaseBtm);   // Base to Front
 
-    // Vertical Fold Axes
-    addScore(-L / 2, yLidTop, -L / 2, yFrontBtm);  // Left Inner Fold
-    addScore(L / 2, yLidTop, L / 2, yFrontBtm);    // Right Inner Fold
+    // Vertical Fold Axes - runs straight from the tuck flap/wing area down through the box body
+    addScore(-L / 2, yTopTuck, -L / 2, yFrontBtm); // Left Inner Fold
+    addScore(L / 2, yTopTuck, L / 2, yFrontBtm);   // Right Inner Fold
 
     addScore(-L / 2 - H, yBaseTop, -L / 2 - H, yBaseBtm); // Left Rollover Fold
     addScore(L / 2 + H, yBaseTop, L / 2 + H, yBaseBtm);   // Right Rollover Fold
-
-    // Wing Folds (lets each wing fold relative to the tuck flap body)
-    addScore(-wingFoldX, yTopTuck, -wingFoldX, yLidTop);  // Left Wing Fold
-    addScore(wingFoldX, yTopTuck, wingFoldX, yLidTop);    // Right Wing Fold
 
     // ==========================================
     // 3. GENERATE BLUE ANNOTATION DIMENSIONS
