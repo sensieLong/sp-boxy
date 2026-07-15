@@ -133,24 +133,26 @@ function calculateDielineGeometry(L, W, H) {
     rAddLine(notchRadius, yTopTuck, L / 2, yTopTuck);
 
     // Top Tuck Flap - side wing, sized by H (the user's Height input).
-    // The wing's inner edge sits exactly at x = L/2, the same line as the
-    // box body's side fold, so the crease can run straight through both.
     // Only the top-outer corner is rounded, widened to the maximum radius
-    // possible - it consumes the entire top edge and outer edge, so the
-    // curve alone spans from the fold line straight to the bottom corner.
-    // Every other corner of the wing stays sharp/straight.
+    // possible for the wing's own footprint; every other corner stays sharp.
+    // The wing's bottom-outer corner is raised by 3mm, with a small vertical
+    // step down to the main fold line - a real, visible gap between the
+    // wing and the main body.
     const wingReach = H;
+    const wingBottomGap = 3 / 25.4; // 3mm, converted to inches
     const wingFoldX = L / 2; // fold line between the flap body and the wing
-    const wingCornerRadius = wingReach; // maximum possible radius
-    const tipX = L / 2 + wingReach;
+    const wingCornerRadius = wingReach; // maximum possible radius for the wing's own footprint
+    const tipX = wingFoldX + wingReach;
+    const wingBottomY = yLidTop - wingBottomGap; // wing's bottom edge, raised 3mm above the main fold
 
     rAddCurve(
         wingFoldX, yTopTuck,
-        wingFoldX + wingCornerRadius * notchK, yTopTuck,          // tangent along the top edge
-        tipX, yLidTop - wingCornerRadius * notchK,                // tangent down the outer edge
-        tipX, yLidTop
-    ); // top-outer corner only - rounded to max radius
-    rAddLine(tipX, yLidTop, wingFoldX, yLidTop); // bottom edge back to the fold boundary - straight, sharp corner
+        wingFoldX + wingCornerRadius * notchK, yTopTuck,           // tangent along the top edge
+        tipX, wingBottomY - wingCornerRadius * notchK,             // tangent down the outer edge
+        tipX, wingBottomY
+    ); // top-outer corner only - rounded to max radius, bottom raised 3mm
+    rAddLine(tipX, wingBottomY, wingFoldX, wingBottomY); // bottom edge of the wing - straight, raised 3mm
+    rAddLine(wingFoldX, wingBottomY, wingFoldX, yLidTop); // vertical step down - the visible 3mm gap
 
     // Lid Dust Flap (Curved ear)
     rAddCurve(L / 2, yLidTop, L / 2 + dustW, yLidTop, L / 2 + dustW, yLidTop + 0.5, L / 2 + dustW, yLidTop + 1.0);
@@ -280,6 +282,456 @@ function getBoundingBox(lines) {
 /**
  * Screen View Rendering Cycle
  */
+// ==========================================
+// DESIGN LAYER: Zoom, Pan, Images, Text, Shapes
+// ==========================================
+
+let viewZoom = 1;
+let viewPanX = 0;
+let viewPanY = 0;
+let currentTransform = { scale: 1, centerX: 0, centerY: 0 }; // base auto-fit transform, set each render()
+
+let designObjects = [];
+let nextObjectId = 1;
+let selectedObjectId = null;
+
+let interactionMode = null; // 'move' | 'vertex' | 'pan' | 'resize-image' | 'resize-circle'
+let interactionVertexIndex = null;
+let interactionStartMouse = { x: 0, y: 0 }; // inches (or screen px for 'pan')
+let interactionStartObject = null; // snapshot of the object at drag start
+
+const zoomInBtn = document.getElementById('btn-zoom-in');
+const zoomOutBtn = document.getElementById('btn-zoom-out');
+const zoomResetBtn = document.getElementById('btn-zoom-reset');
+const zoomDisplay = document.getElementById('zoom-level-display');
+
+const importImageInput = document.getElementById('import-image-input');
+const importImageBtn = document.getElementById('btn-import-image');
+const addTextBtn = document.getElementById('btn-add-text');
+const addCircleBtn = document.getElementById('btn-add-circle');
+const addRectBtn = document.getElementById('btn-add-rect');
+const addTriangleBtn = document.getElementById('btn-add-triangle');
+
+const objectInspector = document.getElementById('object-inspector');
+const textContentField = document.getElementById('text-content-field');
+const textSizeField = document.getElementById('text-size-field');
+const objTextContent = document.getElementById('obj-text-content');
+const objFontSize = document.getElementById('obj-font-size');
+const objColor = document.getElementById('obj-color');
+const colorField = document.getElementById('color-field');
+const imageClipHint = document.getElementById('image-clip-hint');
+const deleteObjectBtn = document.getElementById('btn-delete-object');
+const layerFrontBtn = document.getElementById('btn-layer-front');
+const layerUpBtn = document.getElementById('btn-layer-up');
+const layerDownBtn = document.getElementById('btn-layer-down');
+const layerBackBtn = document.getElementById('btn-layer-back');
+
+function hexToRgb(hex) {
+    const clean = (hex || '#3b82f6').replace('#', '');
+    const bigint = parseInt(clean, 16);
+    return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
+}
+
+function escapeXml(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function screenToInches(screenX, screenY) {
+    const scale = currentTransform.scale * viewZoom;
+    return {
+        x: (screenX - currentTransform.centerX - viewPanX) / scale,
+        y: (screenY - currentTransform.centerY - viewPanY) / scale
+    };
+}
+
+function getSelectedObject() {
+    return designObjects.find(o => o.id === selectedObjectId) || null;
+}
+
+function selectObject(id) {
+    selectedObjectId = id;
+    const obj = getSelectedObject();
+    if (!obj) {
+        objectInspector.style.display = 'none';
+        render();
+        return;
+    }
+    objectInspector.style.display = 'block';
+    const isText = obj.type === 'text';
+    const isImage = obj.type === 'image';
+    textContentField.style.display = isText ? 'block' : 'none';
+    textSizeField.style.display = isText ? 'block' : 'none';
+    colorField.style.display = isImage ? 'none' : 'block';
+    imageClipHint.style.display = isImage ? 'block' : 'none';
+    if (isText) {
+        objTextContent.value = obj.text;
+        objFontSize.value = obj.fontSize;
+    }
+    if (!isImage) objColor.value = obj.color || '#3b82f6';
+    render();
+}
+
+function addDesignObject(obj) {
+    obj.id = nextObjectId++;
+    designObjects.push(obj);
+    selectObject(obj.id);
+}
+
+// --- Layer ordering ---
+function moveSelectedLayer(action) {
+    if (!selectedObjectId) return;
+    const idx = designObjects.findIndex(o => o.id === selectedObjectId);
+    if (idx === -1) return;
+    const obj = designObjects[idx];
+    if (action === 'front') {
+        designObjects.splice(idx, 1);
+        designObjects.push(obj);
+    } else if (action === 'back') {
+        designObjects.splice(idx, 1);
+        designObjects.unshift(obj);
+    } else if (action === 'up' && idx < designObjects.length - 1) {
+        [designObjects[idx], designObjects[idx + 1]] = [designObjects[idx + 1], designObjects[idx]];
+    } else if (action === 'down' && idx > 0) {
+        [designObjects[idx], designObjects[idx - 1]] = [designObjects[idx - 1], designObjects[idx]];
+    }
+    render();
+}
+layerFrontBtn.addEventListener('click', () => moveSelectedLayer('front'));
+layerUpBtn.addEventListener('click', () => moveSelectedLayer('up'));
+layerDownBtn.addEventListener('click', () => moveSelectedLayer('down'));
+layerBackBtn.addEventListener('click', () => moveSelectedLayer('back'));
+
+// --- Toolbar actions ---
+importImageBtn.addEventListener('click', () => importImageInput.click());
+importImageInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+            const maxW = 3; // default footprint, inches - resize afterward via the corner handle
+            const aspect = img.naturalHeight / img.naturalWidth;
+            const width = Math.min(maxW, img.naturalWidth / 96);
+            const height = width * aspect;
+            const clipPoints = [
+                { x: -width / 2, y: -height / 2 },
+                { x: width / 2, y: -height / 2 },
+                { x: width / 2, y: height / 2 },
+                { x: -width / 2, y: height / 2 }
+            ];
+            addDesignObject({ type: 'image', x: 0, y: 0, width, height, src: ev.target.result, imgEl: img, clipPoints });
+        };
+        img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+    importImageInput.value = '';
+});
+
+addTextBtn.addEventListener('click', () => {
+    addDesignObject({ type: 'text', x: 0, y: 0, text: 'Your Text', fontSize: 0.35, color: '#111827' });
+});
+
+addCircleBtn.addEventListener('click', () => {
+    addDesignObject({ type: 'circle', x: 0, y: 0, radius: 0.5, color: '#3b82f6' });
+});
+
+addRectBtn.addEventListener('click', () => {
+    addDesignObject({
+        type: 'rect', x: 0, y: 0, color: '#3b82f6',
+        points: [{ x: -0.75, y: -0.5 }, { x: 0.75, y: -0.5 }, { x: 0.75, y: 0.5 }, { x: -0.75, y: 0.5 }]
+    });
+});
+
+addTriangleBtn.addEventListener('click', () => {
+    addDesignObject({
+        type: 'triangle', x: 0, y: 0, color: '#3b82f6',
+        points: [{ x: 0, y: -0.6 }, { x: 0.7, y: 0.5 }, { x: -0.7, y: 0.5 }]
+    });
+});
+
+objColor.addEventListener('input', () => {
+    const obj = getSelectedObject();
+    if (obj && obj.type !== 'image') { obj.color = objColor.value; render(); }
+});
+objTextContent.addEventListener('input', () => {
+    const obj = getSelectedObject();
+    if (obj && obj.type === 'text') { obj.text = objTextContent.value; render(); }
+});
+objFontSize.addEventListener('input', () => {
+    const obj = getSelectedObject();
+    if (obj && obj.type === 'text') { obj.fontSize = parseFloat(objFontSize.value) || 0.35; render(); }
+});
+deleteObjectBtn.addEventListener('click', () => {
+    designObjects = designObjects.filter(o => o.id !== selectedObjectId);
+    selectedObjectId = null;
+    objectInspector.style.display = 'none';
+    render();
+});
+
+// --- Zoom controls ---
+function updateZoomDisplay() {
+    zoomDisplay.textContent = Math.round(viewZoom * 100) + '%';
+}
+zoomInBtn.addEventListener('click', () => { viewZoom = Math.min(8, viewZoom * 1.25); updateZoomDisplay(); render(); });
+zoomOutBtn.addEventListener('click', () => { viewZoom = Math.max(0.2, viewZoom / 1.25); updateZoomDisplay(); render(); });
+zoomResetBtn.addEventListener('click', () => { viewZoom = 1; viewPanX = 0; viewPanY = 0; updateZoomDisplay(); render(); });
+
+canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const before = screenToInches(mouseX, mouseY);
+    viewZoom = Math.min(8, Math.max(0.2, viewZoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+    const scale = currentTransform.scale * viewZoom;
+    viewPanX = mouseX - currentTransform.centerX - before.x * scale;
+    viewPanY = mouseY - currentTransform.centerY - before.y * scale;
+    updateZoomDisplay();
+    render();
+}, { passive: false });
+
+// --- Object hit testing ---
+const HANDLE_HIT_TOLERANCE_IN = 0.25;
+
+function pointInPolygon(x, y, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        const xi = points[i].x, yi = points[i].y;
+        const xj = points[j].x, yj = points[j].y;
+        const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+function hitTestObjects(xIn, yIn) {
+    for (let i = designObjects.length - 1; i >= 0; i--) {
+        const obj = designObjects[i];
+        if (obj.type === 'circle') {
+            if (Math.hypot(xIn - obj.x, yIn - obj.y) <= obj.radius) return obj;
+        } else if (obj.type === 'rect' || obj.type === 'triangle') {
+            if (pointInPolygon(xIn - obj.x, yIn - obj.y, obj.points)) return obj;
+        } else if (obj.type === 'image') {
+            if (Math.abs(xIn - obj.x) <= obj.width / 2 && Math.abs(yIn - obj.y) <= obj.height / 2) return obj;
+        } else if (obj.type === 'text') {
+            const halfW = obj.text.length * obj.fontSize * 0.3;
+            if (Math.abs(xIn - obj.x) <= halfW && Math.abs(yIn - obj.y) <= obj.fontSize) return obj;
+        }
+    }
+    return null;
+}
+
+function hitTestVertexHandles(xIn, yIn) {
+    const obj = getSelectedObject();
+    if (!obj) return null;
+    if (obj.type === 'rect' || obj.type === 'triangle') {
+        for (let i = 0; i < obj.points.length; i++) {
+            const p = obj.points[i];
+            if (Math.hypot(xIn - (obj.x + p.x), yIn - (obj.y + p.y)) <= HANDLE_HIT_TOLERANCE_IN) {
+                return { kind: 'point', index: i };
+            }
+        }
+    } else if (obj.type === 'circle') {
+        if (Math.hypot(xIn - (obj.x + obj.radius), yIn - obj.y) <= HANDLE_HIT_TOLERANCE_IN) {
+            return { kind: 'radius' };
+        }
+    } else if (obj.type === 'image') {
+        // Resize handle sits a little outside the bounding box corner so it
+        // doesn't overlap the clip-frame's own corner handle.
+        const rx = obj.x + obj.width / 2 + 0.25;
+        const ry = obj.y + obj.height / 2 + 0.25;
+        if (Math.hypot(xIn - rx, yIn - ry) <= HANDLE_HIT_TOLERANCE_IN) {
+            return { kind: 'resize' };
+        }
+        for (let i = 0; i < obj.clipPoints.length; i++) {
+            const p = obj.clipPoints[i];
+            if (Math.hypot(xIn - (obj.x + p.x), yIn - (obj.y + p.y)) <= HANDLE_HIT_TOLERANCE_IN) {
+                return { kind: 'clip', index: i };
+            }
+        }
+    }
+    return null;
+}
+
+// --- Drag interactions ---
+canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const { x: xIn, y: yIn } = screenToInches(mouseX, mouseY);
+
+    const vertexHit = hitTestVertexHandles(xIn, yIn);
+    if (vertexHit) {
+        interactionMode = vertexHit.kind === 'radius' ? 'resize-circle'
+            : vertexHit.kind === 'resize' ? 'resize-image'
+            : vertexHit.kind === 'clip' ? 'clip-vertex'
+            : 'vertex';
+        interactionVertexIndex = vertexHit.index;
+        interactionStartMouse = { x: xIn, y: yIn };
+        interactionStartObject = JSON.parse(JSON.stringify(getSelectedObject()));
+        return;
+    }
+
+    const hit = hitTestObjects(xIn, yIn);
+    if (hit) {
+        selectObject(hit.id);
+        interactionMode = 'move';
+        interactionStartMouse = { x: xIn, y: yIn };
+        interactionStartObject = JSON.parse(JSON.stringify(hit));
+        return;
+    }
+
+    selectObject(null);
+    interactionMode = 'pan';
+    interactionStartMouse = { x: mouseX, y: mouseY };
+    interactionStartObject = { panX: viewPanX, panY: viewPanY };
+});
+
+window.addEventListener('mousemove', (e) => {
+    if (!interactionMode) return;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    if (interactionMode === 'pan') {
+        viewPanX = interactionStartObject.panX + (mouseX - interactionStartMouse.x);
+        viewPanY = interactionStartObject.panY + (mouseY - interactionStartMouse.y);
+        render();
+        return;
+    }
+
+    const { x: xIn, y: yIn } = screenToInches(mouseX, mouseY);
+    const dx = xIn - interactionStartMouse.x;
+    const dy = yIn - interactionStartMouse.y;
+    const obj = getSelectedObject();
+    if (!obj) return;
+
+    if (interactionMode === 'move') {
+        obj.x = interactionStartObject.x + dx;
+        obj.y = interactionStartObject.y + dy;
+    } else if (interactionMode === 'vertex') {
+        const startP = interactionStartObject.points[interactionVertexIndex];
+        obj.points[interactionVertexIndex] = { x: startP.x + dx, y: startP.y + dy };
+    } else if (interactionMode === 'clip-vertex') {
+        const startP = interactionStartObject.clipPoints[interactionVertexIndex];
+        obj.clipPoints[interactionVertexIndex] = { x: startP.x + dx, y: startP.y + dy };
+    } else if (interactionMode === 'resize-circle') {
+        obj.radius = Math.max(0.1, Math.hypot(xIn - obj.x, yIn - obj.y));
+    } else if (interactionMode === 'resize-image') {
+        const newHalfW = Math.max(0.2, interactionStartObject.width / 2 + dx);
+        const ratio = newHalfW / (interactionStartObject.width / 2);
+        obj.width = interactionStartObject.width * ratio;
+        obj.height = interactionStartObject.height * ratio;
+        obj.clipPoints = interactionStartObject.clipPoints.map(p => ({ x: p.x * ratio, y: p.y * ratio }));
+    }
+    render();
+});
+
+window.addEventListener('mouseup', () => {
+    interactionMode = null;
+    interactionVertexIndex = null;
+    interactionStartObject = null;
+});
+
+function drawHandle(x, y) {
+    ctx.save();
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(x - 4, y - 4, 8, 8);
+    ctx.restore();
+}
+
+function drawDesignObjects(cx, cy, scale) {
+    designObjects.forEach(obj => {
+        const sx = cx + obj.x * scale;
+        const sy = cy + obj.y * scale;
+
+        if (obj.type === 'image' && obj.imgEl) {
+            const clip = obj.clipPoints || [
+                { x: -obj.width / 2, y: -obj.height / 2 }, { x: obj.width / 2, y: -obj.height / 2 },
+                { x: obj.width / 2, y: obj.height / 2 }, { x: -obj.width / 2, y: obj.height / 2 }
+            ];
+            ctx.save();
+            ctx.beginPath();
+            clip.forEach((p, i) => {
+                const px = sx + p.x * scale, py = sy + p.y * scale;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            });
+            ctx.closePath();
+            ctx.clip();
+            ctx.drawImage(obj.imgEl, sx - obj.width * scale / 2, sy - obj.height * scale / 2, obj.width * scale, obj.height * scale);
+            ctx.restore();
+        } else if (obj.type === 'text') {
+            ctx.fillStyle = obj.color;
+            ctx.font = `${Math.max(8, obj.fontSize * scale)}px -apple-system, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(obj.text, sx, sy);
+        } else if (obj.type === 'circle') {
+            ctx.beginPath();
+            ctx.arc(sx, sy, obj.radius * scale, 0, Math.PI * 2);
+            ctx.fillStyle = obj.color;
+            ctx.fill();
+        } else if (obj.type === 'rect' || obj.type === 'triangle') {
+            ctx.beginPath();
+            obj.points.forEach((p, i) => {
+                const px = sx + p.x * scale, py = sy + p.y * scale;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            });
+            ctx.closePath();
+            ctx.fillStyle = obj.color;
+            ctx.fill();
+        }
+
+        if (obj.id === selectedObjectId) {
+            ctx.save();
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 3]);
+            if (obj.type === 'circle') {
+                ctx.beginPath();
+                ctx.arc(sx, sy, obj.radius * scale, 0, Math.PI * 2);
+                ctx.stroke();
+                drawHandle(sx + obj.radius * scale, sy);
+            } else if (obj.type === 'rect' || obj.type === 'triangle') {
+                ctx.beginPath();
+                obj.points.forEach((p, i) => {
+                    const px = sx + p.x * scale, py = sy + p.y * scale;
+                    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                });
+                ctx.closePath();
+                ctx.stroke();
+                obj.points.forEach(p => drawHandle(sx + p.x * scale, sy + p.y * scale));
+            } else if (obj.type === 'image') {
+                const hw = obj.width * scale / 2, hh = obj.height * scale / 2;
+                ctx.setLineDash([2, 2]);
+                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                ctx.strokeRect(sx - hw, sy - hh, hw * 2, hh * 2); // full image bounds (faint reference)
+
+                ctx.strokeStyle = '#f59e0b';
+                ctx.setLineDash([4, 3]);
+                const clip = obj.clipPoints || [];
+                ctx.beginPath();
+                clip.forEach((p, i) => {
+                    const px = sx + p.x * scale, py = sy + p.y * scale;
+                    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                });
+                ctx.closePath();
+                ctx.stroke(); // editable clip / crop frame
+                clip.forEach(p => drawHandle(sx + p.x * scale, sy + p.y * scale));
+
+                drawHandle(sx + hw + 0.25 * scale, sy + hh + 0.25 * scale); // resize handle, offset outside the corner
+            } else if (obj.type === 'text') {
+                const halfW = obj.text.length * obj.fontSize * scale * 0.3;
+                const halfH = obj.fontSize * scale;
+                ctx.strokeRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
+            }
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+    });
+}
+
 function render() {
     const L = parseFloat(inputLength.value) || 12.4;
     const W = parseFloat(inputWidth.value) || 7.95;
@@ -303,18 +755,25 @@ function render() {
     const centerX = viewW / 2;
     const centerY = viewH / 2 - ((maxY + minY) / 2) * scaleFactor;
 
+    // Base (auto-fit) transform, exposed for mouse interaction math; the
+    // live view additionally applies zoom/pan on top of this.
+    currentTransform = { scale: scaleFactor, centerX, centerY };
+    const scale = scaleFactor * viewZoom;
+    const cx = centerX + viewPanX;
+    const cy = centerY + viewPanY;
+
     // Render CAD Lines
     geometry.lines.forEach(line => {
         ctx.beginPath();
-        ctx.moveTo(centerX + line.x1 * scaleFactor, centerY + line.y1 * scaleFactor);
+        ctx.moveTo(cx + line.x1 * scale, cy + line.y1 * scale);
 
         if (line.shape === 'line') {
-            ctx.lineTo(centerX + line.x2 * scaleFactor, centerY + line.y2 * scaleFactor);
+            ctx.lineTo(cx + line.x2 * scale, cy + line.y2 * scale);
         } else if (line.shape === 'bezier') {
             ctx.bezierCurveTo(
-                centerX + line.cp1x * scaleFactor, centerY + line.cp1y * scaleFactor,
-                centerX + line.cp2x * scaleFactor, centerY + line.cp2y * scaleFactor,
-                centerX + line.x2 * scaleFactor, centerY + line.y2 * scaleFactor
+                cx + line.cp1x * scale, cy + line.cp1y * scale,
+                cx + line.cp2x * scale, cy + line.cp2y * scale,
+                cx + line.x2 * scale, cy + line.y2 * scale
             );
         }
 
@@ -341,10 +800,10 @@ function render() {
     ctx.font = '600 13px -apple-system, sans-serif';
 
     geometry.dims.forEach(dim => {
-        const sx = centerX + dim.x1 * scaleFactor;
-        const sy = centerY + dim.y1 * scaleFactor;
-        const ex = centerX + dim.x2 * scaleFactor;
-        const ey = centerY + dim.y2 * scaleFactor;
+        const sx = cx + dim.x1 * scale;
+        const sy = cy + dim.y1 * scale;
+        const ex = cx + dim.x2 * scale;
+        const ey = cy + dim.y2 * scale;
 
         // Line
         ctx.beginPath();
@@ -383,6 +842,8 @@ function render() {
         ctx.fillStyle = '#3b82f6';
         ctx.fillText(dim.text, tx, ty);
     });
+
+    drawDesignObjects(cx, cy, scale);
 }
 
 /**
@@ -467,6 +928,51 @@ function downloadCADVectorPDF() {
         doc.lines(segs, startX, startY, [1, 1], 'S', chain.closed);
     });
 
+    // Design elements (imported images, text, shapes) - placed at their true
+    // inch positions, independent of the on-screen zoom/pan.
+    designObjects.forEach(obj => {
+        const px = obj.x + pdfOffsetX;
+        const py = obj.y + pdfOffsetY;
+        const [r, g, b] = hexToRgb(obj.color);
+
+        if (obj.type === 'image' && obj.src) {
+            try {
+                const format = obj.src.includes('image/png') ? 'PNG' : 'JPEG';
+                if (obj.clipPoints && obj.clipPoints.length >= 3) {
+                    doc.saveGraphicsState();
+                    const clipSegs = [];
+                    for (let i = 1; i < obj.clipPoints.length; i++) {
+                        clipSegs.push([obj.clipPoints[i].x - obj.clipPoints[i - 1].x, obj.clipPoints[i].y - obj.clipPoints[i - 1].y]);
+                    }
+                    doc.lines(clipSegs, obj.clipPoints[0].x + px, obj.clipPoints[0].y + py, [1, 1], null, true);
+                    doc.clip();
+                    doc.discardPath();
+                    doc.addImage(obj.src, format, px - obj.width / 2, py - obj.height / 2, obj.width, obj.height);
+                    doc.restoreGraphicsState();
+                } else {
+                    doc.addImage(obj.src, format, px - obj.width / 2, py - obj.height / 2, obj.width, obj.height);
+                }
+            } catch (err) {
+                console.warn('Could not embed image in PDF export', err);
+            }
+        } else if (obj.type === 'text') {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(obj.fontSize * 72); // inches -> points
+            doc.setTextColor(r, g, b);
+            doc.text(obj.text, px, py, { align: 'center', baseline: 'middle' });
+        } else if (obj.type === 'circle') {
+            doc.setFillColor(r, g, b);
+            doc.circle(px, py, obj.radius, 'F');
+        } else if (obj.type === 'rect' || obj.type === 'triangle') {
+            doc.setFillColor(r, g, b);
+            const segs2 = [];
+            for (let i = 1; i < obj.points.length; i++) {
+                segs2.push([obj.points[i].x - obj.points[i - 1].x, obj.points[i].y - obj.points[i - 1].y]);
+            }
+            doc.lines(segs2, obj.points[0].x + px, obj.points[0].y + py, [1, 1], 'F', true);
+        }
+    });
+
     doc.save(`Dieline_Mailer_${L}x${W}x${H}.pdf`);
 }
 
@@ -520,6 +1026,30 @@ function buildSVGDocument(geometry, L, W, H) {
         });
         body += `  </g>\n`;
     });
+
+    body += '  <g id="design-elements">\n';
+    designObjects.forEach((obj, idx) => {
+        const ox = obj.x + offsetX;
+        const oy = obj.y + offsetY;
+        if (obj.type === 'image' && obj.src) {
+            if (obj.clipPoints && obj.clipPoints.length >= 3) {
+                const clipId = `imgClip${idx}`;
+                const clipPts = obj.clipPoints.map(p => `${fmt(p.x + ox)},${fmt(p.y + oy)}`).join(' ');
+                body += `    <clipPath id="${clipId}"><polygon points="${clipPts}" /></clipPath>\n`;
+                body += `    <image href="${obj.src}" x="${fmt(ox - obj.width / 2)}" y="${fmt(oy - obj.height / 2)}" width="${fmt(obj.width)}" height="${fmt(obj.height)}" clip-path="url(#${clipId})" />\n`;
+            } else {
+                body += `    <image href="${obj.src}" x="${fmt(ox - obj.width / 2)}" y="${fmt(oy - obj.height / 2)}" width="${fmt(obj.width)}" height="${fmt(obj.height)}" />\n`;
+            }
+        } else if (obj.type === 'text') {
+            body += `    <text x="${fmt(ox)}" y="${fmt(oy)}" fill="${obj.color}" font-size="${fmt(obj.fontSize)}" text-anchor="middle" dominant-baseline="middle">${escapeXml(obj.text)}</text>\n`;
+        } else if (obj.type === 'circle') {
+            body += `    <circle cx="${fmt(ox)}" cy="${fmt(oy)}" r="${fmt(obj.radius)}" fill="${obj.color}" />\n`;
+        } else if (obj.type === 'rect' || obj.type === 'triangle') {
+            const pts = obj.points.map(p => `${fmt(p.x + ox)},${fmt(p.y + oy)}`).join(' ');
+            body += `    <polygon points="${pts}" fill="${obj.color}" />\n`;
+        }
+    });
+    body += '  </g>\n';
 
     return `<?xml version="1.0" encoding="UTF-8"?>\n` +
         `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(width)}in" height="${fmt(height)}in" ` +

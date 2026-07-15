@@ -47,6 +47,59 @@
                 <div class="legend-item"><span class="line-sample cut-line"></span> Blue Solid = Outer Cut Line</div>
                 <div class="legend-item"><span class="line-sample score-line"></span> Red Dashed = Crease / Score Line</div>
             </div>
+
+            <div class="control-group">
+                <h3>Zoom</h3>
+                <div class="zoom-controls">
+                    <button type="button" id="btn-zoom-out" class="btn-icon" title="Zoom Out">&minus;</button>
+                    <span id="zoom-level-display">100%</span>
+                    <button type="button" id="btn-zoom-in" class="btn-icon" title="Zoom In">+</button>
+                    <button type="button" id="btn-zoom-reset" class="btn-icon btn-icon-wide" title="Reset View">Reset</button>
+                </div>
+                <p class="hint-text">Scroll to zoom. Drag empty space to pan.</p>
+            </div>
+
+            <div class="control-group">
+                <h3>Design Elements</h3>
+                <input type="file" id="import-image-input" accept="image/*" style="display:none">
+                <button type="button" id="btn-import-image" class="btn btn-secondary">Import Image</button>
+                <button type="button" id="btn-add-text" class="btn btn-secondary">Add Text</button>
+                <div class="shape-buttons">
+                    <button type="button" id="btn-add-circle" class="btn-icon" title="Add Circle">&#9675;</button>
+                    <button type="button" id="btn-add-rect" class="btn-icon" title="Add Rectangle">&#9645;</button>
+                    <button type="button" id="btn-add-triangle" class="btn-icon" title="Add Triangle">&#9651;</button>
+                </div>
+                <p class="hint-text">Drag a shape to move it, drag its corner handles to reshape it.</p>
+            </div>
+
+            <div class="control-group" id="object-inspector" style="display:none">
+                <h3>Selected Element</h3>
+                <div class="input-field" id="text-content-field" style="display:none">
+                    <label for="obj-text-content">Text</label>
+                    <input type="text" id="obj-text-content">
+                </div>
+                <div class="input-field" id="text-size-field" style="display:none">
+                    <label for="obj-font-size">Font Size (in)</label>
+                    <input type="number" id="obj-font-size" step="0.05" min="0.1">
+                </div>
+                <div class="input-field" id="color-field">
+                    <label for="obj-color">Color</label>
+                    <input type="color" id="obj-color">
+                </div>
+                <p class="hint-text" id="image-clip-hint" style="display:none">
+                    Drag the outer handle to resize the image. Drag the orange frame's corner points to adjust the crop mask.
+                </p>
+                <div class="input-field">
+                    <label>Layer Order</label>
+                    <div class="layer-controls">
+                        <button type="button" id="btn-layer-front" class="btn-icon" title="Bring to Front">&#8607;</button>
+                        <button type="button" id="btn-layer-up" class="btn-icon" title="Move Up">&#8593;</button>
+                        <button type="button" id="btn-layer-down" class="btn-icon" title="Move Down">&#8595;</button>
+                        <button type="button" id="btn-layer-back" class="btn-icon" title="Send to Back">&#8609;</button>
+                    </div>
+                </div>
+                <button type="button" id="btn-delete-object" class="btn btn-secondary">Delete Element</button>
+            </div>
         </aside>
 
         <main class="preview-area">
