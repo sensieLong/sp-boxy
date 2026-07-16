@@ -4,9 +4,84 @@ const ctx = canvas.getContext('2d');
 const inputLength = document.getElementById('length');
 const inputWidth = document.getElementById('width');
 const inputHeight = document.getElementById('height');
+const inputTopFold = document.getElementById('topfold');
+const topFoldField = document.getElementById('topfold-field');
 const dimString = document.getElementById('dimension-string');
 const downloadBtn = document.getElementById('btn-download');
 const downloadSvgBtn = document.getElementById('btn-download-svg');
+
+// --- Crop Mark controls ---
+const cropMarksField = document.getElementById('cropmarks-field');
+const cmLengthInput = document.getElementById('cm-length');
+const cmThicknessInput = document.getElementById('cm-thickness');
+const cmColorInput = document.getElementById('cm-color');
+const cmPaddingInput = document.getElementById('cm-padding');
+const cmDashLengthInput = document.getElementById('cm-dash-length');
+const cmDashGapInput = document.getElementById('cm-dash-gap');
+
+function getCropMarkSettings() {
+    return {
+        lengthIn: parseFloat(cmLengthInput.value) || 0.25,
+        thicknessPt: parseFloat(cmThicknessInput.value) || 0.5,
+        color: cmColorInput.value || '#000000',
+        paddingIn: parseFloat(cmPaddingInput.value) || 0.0833,
+        dashLenPt: parseFloat(cmDashLengthInput.value) || 3,
+        dashGapPt: parseFloat(cmDashGapInput.value) || 3
+    };
+}
+
+[cmLengthInput, cmThicknessInput, cmColorInput, cmPaddingInput, cmDashLengthInput, cmDashGapInput]
+    .forEach(el => el.addEventListener('input', render));
+
+// --- Mode Switcher (Corrugated Box Mode vs Paper Bag Mode) ---
+const modeBoxBtn = document.getElementById('mode-box-btn');
+const modeBagBtn = document.getElementById('mode-bag-btn');
+const brandSubtitle = document.getElementById('brand-subtitle');
+const dimensionsHeading = document.getElementById('dimensions-heading');
+const labelLength = document.getElementById('label-length');
+const labelWidth = document.getElementById('label-width');
+const labelHeight = document.getElementById('label-height');
+const previewHeading = document.getElementById('preview-heading');
+
+function setMode(mode) {
+    currentMode = mode;
+    if (mode === 'bag') {
+        modeBagBtn.classList.add('mode-tab-active');
+        modeBoxBtn.classList.remove('mode-tab-active');
+        brandSubtitle.textContent = 'Paper Bag Specification Utility';
+        labelLength.textContent = 'Width (W)';
+        labelWidth.textContent = 'Gusset (D)';
+        labelHeight.textContent = 'Height (H)';
+        previewHeading.textContent = 'Live Bag Dieline Preview';
+        inputLength.value = 8.0;
+        inputWidth.value = 3.0;
+        inputHeight.value = 10.0;
+        inputTopFold.value = 2.0;
+        topFoldField.style.display = 'block';
+        cropMarksField.style.display = 'block';
+    } else {
+        modeBoxBtn.classList.add('mode-tab-active');
+        modeBagBtn.classList.remove('mode-tab-active');
+        brandSubtitle.textContent = 'Mailer Box Specification Utility';
+        labelLength.textContent = 'Length (L)';
+        labelWidth.textContent = 'Width (W)';
+        labelHeight.textContent = 'Height (H)';
+        previewHeading.textContent = 'Live Structural Preview';
+        inputLength.value = 8.0;
+        inputWidth.value = 6.0;
+        inputHeight.value = 3.0;
+        topFoldField.style.display = 'none';
+        cropMarksField.style.display = 'none';
+    }
+    viewZoom = 1;
+    viewPanX = 0;
+    viewPanY = 0;
+    render();
+}
+
+modeBoxBtn.addEventListener('click', () => setMode('box'));
+modeBagBtn.addEventListener('click', () => setMode('bag'));
+inputTopFold.addEventListener('input', render);
 
 // Setup crisp high-DPI resolution rendering
 function resizeCanvas() {
@@ -84,7 +159,7 @@ function chainOps(ops, eps = 1e-4) {
  * Advanced Mailer Box Vector Mapping Engine
  * Calculates true Cherry Lock / RETT structural geometry
  */
-function calculateDielineGeometry(L, W, H) {
+function calculateBoxGeometry(L, W, H) {
     const dims = [];
 
     // Proportional structural constants
@@ -263,6 +338,120 @@ function calculateDielineGeometry(L, W, H) {
 }
 
 /**
+ * Paper Bag (SOS / satchel-bottom style) Vector Mapping Engine.
+ * Lays out a flat sheet: Glue Tab | Front | Gusset | Back | Gusset.
+ * W = panel width, D = gusset depth, H = body height, topFold = top
+ * fold-over allowance (user-controlled).
+ */
+function calculateBagGeometry(W, D, H, topFold) {
+    const dims = [];
+    const gt = 1.0;                  // glue tab width
+    const bottomFlap = D / 2 + 1;    // bottom base depth: half the gusset width, plus 1"
+
+    const x0 = 0;
+    const x1 = gt;
+    const x2 = gt + W;
+    const x3 = gt + W + D;
+    const x4 = gt + W + D + W;
+    const x5 = gt + 2 * W + 2 * D;
+
+    const y0 = 0;
+    const y1 = topFold;
+    const y2 = topFold + H;
+    const y3 = topFold + H + bottomFlap;
+
+    const cutOps = [];
+    const scoreOps = [];
+    const slitOps = [];
+
+    const addCutLine = (ax, ay, bx, by) => cutOps.push({ shape: 'line', type: 'cut', x1: ax, y1: ay, x2: bx, y2: by });
+    const addScoreLine = (ax, ay, bx, by) => scoreOps.push({ shape: 'line', type: 'score', x1: ax, y1: ay, x2: bx, y2: by });
+
+    // Outer cut - the sheet is a simple rectangle
+    addCutLine(x0, y0, x5, y0);
+    addCutLine(x5, y0, x5, y3);
+    addCutLine(x5, y3, x0, y3);
+    addCutLine(x0, y3, x0, y0);
+
+    // Panel divider folds - every vertical crease runs from the top bound
+    // of the top fold straight down to the bottom of the bag.
+    [x1, x2, x3, x4].forEach(x => addScoreLine(x, y0, x, y3));
+
+    // Top fold, full width
+    addScoreLine(x0, y1, x5, y1);
+
+    // Base fold, full width - the line the bottom folds up along
+    addScoreLine(x0, y2, x5, y2);
+
+    // Side (gusset) creases: the imaginary square of side D/2 has moved up
+    // by its own height, so its bottom edge now sits on the base fold and
+    // its top edge sits a further D/2 above it. The 45-degree creases
+    // still start from that top-center point, but now run all the way
+    // down to the sheet's true bottom edge instead of stopping at the
+    // gusset's own boundary. A new horizontal crease runs the full width
+    // of the layout along the square's new top edge.
+    const cA = (x2 + x3) / 2;
+    const cB = (x4 + x5) / 2;
+    const half = D / 2;       // the square's side length
+    const apexY = y2 - half;  // square moved up by its own height
+    const runToBottom = y3 - apexY; // horizontal reach needed to hit y3 at 45 degrees
+
+    // Gusset A: both sides have room, so both creases run their full reach
+    addScoreLine(cA, apexY, cA - runToBottom, y3);
+    addScoreLine(cA, apexY, cA + runToBottom, y3);
+
+    // Gusset B: the left side has room, but the right side is the outermost
+    // crease in the layout and can run past the sheet's true right edge.
+    // Where that happens, trim it at the edge and relocate the trimmed-off
+    // excess - unchanged in length or angle, only shifted horizontally - so
+    // it starts at the glue tab's right edge instead, still landing on the
+    // bottom edge of the sheet just like it did before the move.
+    addScoreLine(cB, apexY, cB - runToBottom, y3); // left side, normal reach
+    const cBRightEndX = cB + runToBottom;
+    if (cBRightEndX > x5) {
+        const yCross = apexY + (x5 - cB); // where the diagonal crosses the sheet's right edge
+        addScoreLine(cB, apexY, x5, yCross); // trimmed diagonal, stops at the sheet edge
+        const shiftDx = x1 - x5;
+        addScoreLine(x1, yCross, cBRightEndX + shiftDx, y3); // excess, moved next to the glue tab
+    } else {
+        addScoreLine(cB, apexY, cBRightEndX, y3); // no overflow for this input size - draw normally
+    }
+
+    // New horizontal crease along the square's new top edge, full width
+    addScoreLine(x0, apexY, x5, apexY);
+
+    // Gusset center folds - lets each gusset fold flat when the bag isn't
+    // loaded; now runs the full height, straight down to the bottom edge.
+    addScoreLine(cA, y0, cA, y3);
+    addScoreLine(cB, y0, cB, y3);
+
+    // Dimension callouts
+    dims.push({ x1: x0, y1: -0.3, x2: x1, y2: -0.3, text: `${topFold.toFixed(4)} in` });          // Top fold
+    dims.push({ x1: x1, y1: y1 - 0.3, x2: x2, y2: y1 - 0.3, text: `${W.toFixed(4)} in` });         // Front width
+    dims.push({ x1: x2, y1: y1 - 0.3, x2: x3, y2: y1 - 0.3, text: `${D.toFixed(4)} in` });         // Gusset depth
+    dims.push({ x1: x1 - 0.3, y1: y1, x2: x1 - 0.3, y2: y2, text: `${H.toFixed(4)} in` });         // Body height
+    dims.push({ x1: x1 - 0.3, y1: y2, x2: x1 - 0.3, y2: y3, text: `${bottomFlap.toFixed(4)} in` }); // Bottom base
+
+    const lines = [...cutOps, ...scoreOps, ...slitOps];
+    const cutChains = chainOps(cutOps);
+    const scoreChains = chainOps(scoreOps);
+    const slitChains = chainOps(slitOps);
+
+    return { lines, dims, cutChains, scoreChains, slitChains };
+}
+
+// Current template mode: 'box' (Corrugated Box Mode) or 'bag' (Paper Bag Mode)
+let currentMode = 'box';
+
+function calculateDieline(a, b, c) {
+    if (currentMode === 'bag') {
+        const topFold = parseFloat(inputTopFold.value) || 2.0;
+        return calculateBagGeometry(a, b, c, topFold);
+    }
+    return calculateBoxGeometry(a, b, c);
+}
+
+/**
  * Shared bounding-box scan used by preview render, PDF export, and SVG export.
  */
 function getBoundingBox(lines) {
@@ -277,6 +466,41 @@ function getBoundingBox(lines) {
         }
     });
     return { minX, maxX, minY, maxY };
+}
+
+/**
+ * Scans the geometry's trim bounding box for every point where an internal
+ * score (fold) line touches that boundary, so crop-mark generation can also
+ * place a matching crease tick at each one - in addition to the four
+ * standard Illustrator-style corner crop marks.
+ */
+function computeCropMarkData(geometry) {
+    const { minX, maxX, minY, maxY } = getBoundingBox(geometry.lines);
+    const eps = 1e-3;
+    const round4 = n => Math.round(n * 10000) / 10000;
+
+    const topCreases = new Map();
+    const bottomCreases = new Map();
+    const leftCreases = new Map();
+    const rightCreases = new Map();
+
+    geometry.lines.forEach(l => {
+        if (l.type !== 'score' || l.shape !== 'line') return;
+        [[l.x1, l.y1], [l.x2, l.y2]].forEach(([x, y]) => {
+            if (Math.abs(y - minY) < eps) topCreases.set(round4(x), true);
+            if (Math.abs(y - maxY) < eps) bottomCreases.set(round4(x), true);
+            if (Math.abs(x - minX) < eps) leftCreases.set(round4(y), true);
+            if (Math.abs(x - maxX) < eps) rightCreases.set(round4(y), true);
+        });
+    });
+
+    return {
+        minX, maxX, minY, maxY,
+        topCreases: [...topCreases.keys()],
+        bottomCreases: [...bottomCreases.keys()],
+        leftCreases: [...leftCreases.keys()],
+        rightCreases: [...rightCreases.keys()]
+    };
 }
 
 /**
@@ -743,7 +967,7 @@ function render() {
     const viewH = canvas.height / window.devicePixelRatio;
 
     ctx.clearRect(0, 0, viewW, viewH);
-    const geometry = calculateDielineGeometry(L, W, H);
+    const geometry = calculateDieline(L, W, H);
 
     // Scan bounding profiles for auto-fitting calculations
     const { minX, maxX, minY, maxY } = getBoundingBox(geometry.lines);
@@ -752,7 +976,7 @@ function render() {
     const boxBoundingH = maxY - minY;
     const scaleFactor = Math.min((viewW * 0.85) / boxBoundingW, (viewH * 0.85) / boxBoundingH);
 
-    const centerX = viewW / 2;
+    const centerX = viewW / 2 - ((maxX + minX) / 2) * scaleFactor;
     const centerY = viewH / 2 - ((maxY + minY) / 2) * scaleFactor;
 
     // Base (auto-fit) transform, exposed for mouse interaction math; the
@@ -844,6 +1068,58 @@ function render() {
     });
 
     drawDesignObjects(cx, cy, scale);
+
+    if (currentMode === 'bag') {
+        drawCropMarksCanvas(geometry, cx, cy, scale);
+    }
+}
+
+/**
+ * Live on-screen preview of crop marks + crease ticks, matching the same
+ * geometry and styling used in the PDF/SVG exports.
+ */
+function drawCropMarksCanvas(geometry, cx, cy, scale) {
+    const crop = computeCropMarkData(geometry);
+    const settings = getCropMarkSettings();
+    const gap = settings.paddingIn;
+    const markLen = settings.lengthIn;
+    const thicknessPx = Math.max(1, settings.thicknessPt * 1.333); // pt -> px approximation
+    const dashLenPx = settings.dashLenPt * 1.333;
+    const dashGapPx = settings.dashGapPt * 1.333;
+    const { minX, maxX, minY, maxY } = crop;
+
+    const X = x => cx + x * scale;
+    const Y = y => cy + y * scale;
+    const line = (x1, y1, x2, y2) => {
+        ctx.beginPath();
+        ctx.moveTo(X(x1), Y(y1));
+        ctx.lineTo(X(x2), Y(y2));
+        ctx.stroke();
+    };
+
+    ctx.save();
+    ctx.strokeStyle = settings.color;
+    ctx.lineWidth = thicknessPx;
+    ctx.setLineDash([]);
+
+    // Corner crop marks (solid)
+    line(minX - gap - markLen, minY, minX - gap, minY);
+    line(minX, minY - gap - markLen, minX, minY - gap);
+    line(maxX + gap, minY, maxX + gap + markLen, minY);
+    line(maxX, minY - gap - markLen, maxX, minY - gap);
+    line(minX - gap - markLen, maxY, minX - gap, maxY);
+    line(minX, maxY + gap, minX, maxY + gap + markLen);
+    line(maxX + gap, maxY, maxX + gap + markLen, maxY);
+    line(maxX, maxY + gap, maxX, maxY + gap + markLen);
+
+    // Crease marks - same length/color/thickness as the corner marks, dashed
+    ctx.setLineDash([dashLenPx, dashGapPx]);
+    crop.topCreases.forEach(x => line(x, minY - gap - markLen, x, minY - gap));
+    crop.bottomCreases.forEach(x => line(x, maxY + gap, x, maxY + gap + markLen));
+    crop.leftCreases.forEach(y => line(minX - gap - markLen, y, minX - gap, y));
+    crop.rightCreases.forEach(y => line(maxX + gap, y, maxX + gap + markLen, y));
+
+    ctx.restore();
 }
 
 /**
@@ -859,7 +1135,7 @@ function downloadCADVectorPDF() {
     const W = parseFloat(inputWidth.value) || 7.95;
     const H = parseFloat(inputHeight.value) || 2.44;
 
-    const geometry = calculateDielineGeometry(L, W, H);
+    const geometry = calculateDieline(L, W, H);
     const { minX, maxX, minY, maxY } = getBoundingBox(geometry.lines);
 
     const exactFlatW = maxX - minX;
@@ -881,7 +1157,10 @@ function downloadCADVectorPDF() {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
     doc.setTextColor(0, 0, 0);
-    doc.text(`Mailer Box Dieline (${L}" x ${W}" x ${H}")`, padding / 2, 0.6);
+    const pdfTitle = currentMode === 'bag'
+        ? `Paper Bag Dieline (W:${L}" D:${W}" H:${H}")`
+        : `Mailer Box Dieline (${L}" x ${W}" x ${H}")`;
+    doc.text(pdfTitle, padding / 2, 0.6);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
@@ -973,7 +1252,46 @@ function downloadCADVectorPDF() {
         }
     });
 
-    doc.save(`Dieline_Mailer_${L}x${W}x${H}.pdf`);
+    // Crop marks + crease ticks - Illustrator-style corner marks around the
+    // trim edge, plus a shorter tick wherever an internal fold line meets
+    // that edge, so the crease positions are visible once trimmed.
+    if (currentMode === 'bag') {
+        const crop = computeCropMarkData(geometry);
+        const settings = getCropMarkSettings();
+        const gap = settings.paddingIn;
+        const markLen = settings.lengthIn;
+        const thicknessIn = settings.thicknessPt / 72;
+        const [cr, cg, cb] = hexToRgb(settings.color);
+        const dashLenIn = settings.dashLenPt / 72;
+        const dashGapIn = settings.dashGapPt / 72;
+        const cx = x => x + pdfOffsetX;
+        const cy = y => y + pdfOffsetY;
+        const { minX, maxX, minY, maxY } = crop;
+
+        doc.setLineDashPattern([], 0);
+        doc.setLineCap('butt');
+        doc.setDrawColor(cr, cg, cb);
+        doc.setLineWidth(thicknessIn);
+        // Corner crop marks (solid)
+        doc.line(cx(minX - gap - markLen), cy(minY), cx(minX - gap), cy(minY));
+        doc.line(cx(minX), cy(minY - gap - markLen), cx(minX), cy(minY - gap));
+        doc.line(cx(maxX + gap), cy(minY), cx(maxX + gap + markLen), cy(minY));
+        doc.line(cx(maxX), cy(minY - gap - markLen), cx(maxX), cy(minY - gap));
+        doc.line(cx(minX - gap - markLen), cy(maxY), cx(minX - gap), cy(maxY));
+        doc.line(cx(minX), cy(maxY + gap), cx(minX), cy(maxY + gap + markLen));
+        doc.line(cx(maxX + gap), cy(maxY), cx(maxX + gap + markLen), cy(maxY));
+        doc.line(cx(maxX), cy(maxY + gap), cx(maxX), cy(maxY + gap + markLen));
+
+        // Crease marks - same length, color, and thickness as the corner
+        // marks; the only difference is the dash pattern.
+        doc.setLineDashPattern([dashLenIn, dashGapIn], 0);
+        crop.topCreases.forEach(x => doc.line(cx(x), cy(minY - gap - markLen), cx(x), cy(minY - gap)));
+        crop.bottomCreases.forEach(x => doc.line(cx(x), cy(maxY + gap), cx(x), cy(maxY + gap + markLen)));
+        crop.leftCreases.forEach(y => doc.line(cx(minX - gap - markLen), cy(y), cx(minX - gap), cy(y)));
+        crop.rightCreases.forEach(y => doc.line(cx(maxX + gap), cy(y), cx(maxX + gap + markLen), cy(y)));
+    }
+
+    doc.save(currentMode === 'bag' ? `Dieline_PaperBag_${L}x${W}x${H}.pdf` : `Dieline_Mailer_${L}x${W}x${H}.pdf`);
 }
 
 /**
@@ -1051,10 +1369,48 @@ function buildSVGDocument(geometry, L, W, H) {
     });
     body += '  </g>\n';
 
+    if (currentMode === 'bag') {
+        const crop = computeCropMarkData(geometry);
+        const settings = getCropMarkSettings();
+        const gap = settings.paddingIn;
+        const markLen = settings.lengthIn;
+        const thicknessIn = settings.thicknessPt / 72;
+        const dashLenIn = settings.dashLenPt / 72;
+        const dashGapIn = settings.dashGapPt / 72;
+        const cx = x => x + offsetX;
+        const cy = y => y + offsetY;
+        const { minX: cMinX, maxX: cMaxX, minY: cMinY, maxY: cMaxY } = crop;
+        const ln = (x1v, y1v, x2v, y2v) => `    <line x1="${fmt(cx(x1v))}" y1="${fmt(cy(y1v))}" x2="${fmt(cx(x2v))}" y2="${fmt(cy(y2v))}" />\n`;
+
+        body += `  <g id="crop-marks" stroke="${settings.color}" stroke-width="${fmt(thicknessIn)}">\n`;
+        body += ln(cMinX - gap - markLen, cMinY, cMinX - gap, cMinY);
+        body += ln(cMinX, cMinY - gap - markLen, cMinX, cMinY - gap);
+        body += ln(cMaxX + gap, cMinY, cMaxX + gap + markLen, cMinY);
+        body += ln(cMaxX, cMinY - gap - markLen, cMaxX, cMinY - gap);
+        body += ln(cMinX - gap - markLen, cMaxY, cMinX - gap, cMaxY);
+        body += ln(cMinX, cMaxY + gap, cMinX, cMaxY + gap + markLen);
+        body += ln(cMaxX + gap, cMaxY, cMaxX + gap + markLen, cMaxY);
+        body += ln(cMaxX, cMaxY + gap, cMaxX, cMaxY + gap + markLen);
+        body += '  </g>\n';
+
+        // Crease marks - same length, color, and thickness as the corner
+        // marks; the only difference is the dash pattern.
+        body += `  <g id="crease-marks" stroke="${settings.color}" stroke-width="${fmt(thicknessIn)}" stroke-dasharray="${fmt(dashLenIn)},${fmt(dashGapIn)}">\n`;
+        crop.topCreases.forEach(x => { body += ln(x, cMinY - gap - markLen, x, cMinY - gap); });
+        crop.bottomCreases.forEach(x => { body += ln(x, cMaxY + gap, x, cMaxY + gap + markLen); });
+        crop.leftCreases.forEach(y => { body += ln(cMinX - gap - markLen, y, cMinX - gap, y); });
+        crop.rightCreases.forEach(y => { body += ln(cMaxX + gap, y, cMaxX + gap + markLen, y); });
+        body += '  </g>\n';
+    }
+
+    const svgComment = currentMode === 'bag'
+        ? `  <!-- Paper Bag Dieline W:${L}in D:${W}in H:${H}in | Blue: Cut Line | Red Dashed: Score Line -->\n`
+        : `  <!-- Mailer Box Dieline ${L}in x ${W}in x ${H}in | Blue: Cut Line | Red Dashed: Score Line | Green: Lock Slit -->\n`;
+
     return `<?xml version="1.0" encoding="UTF-8"?>\n` +
         `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(width)}in" height="${fmt(height)}in" ` +
         `viewBox="0 0 ${fmt(width)} ${fmt(height)}">\n` +
-        `  <!-- Mailer Box Dieline ${L}in x ${W}in x ${H}in | Blue: Cut Line | Red Dashed: Score Line | Green: Lock Slit -->\n` +
+        svgComment +
         body +
         `</svg>\n`;
 }
@@ -1064,14 +1420,14 @@ function downloadSVG() {
     const W = parseFloat(inputWidth.value) || 7.95;
     const H = parseFloat(inputHeight.value) || 2.44;
 
-    const geometry = calculateDielineGeometry(L, W, H);
+    const geometry = calculateDieline(L, W, H);
     const svgString = buildSVGDocument(geometry, L, W, H);
 
     const blob = new Blob([svgString], { type: 'image/svg+xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Dieline_Mailer_${L}x${W}x${H}.svg`;
+    a.download = currentMode === 'bag' ? `Dieline_PaperBag_${L}x${W}x${H}.svg` : `Dieline_Mailer_${L}x${W}x${H}.svg`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

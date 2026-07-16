@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CAD Dieline Studio</title>
-    <link rel="icon" type="image/x-icon" href="./Assets/boxy.ico">
+    <title>Spiokoks Dieline Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -12,26 +14,36 @@
     <div class="studio-container">
         <aside class="sidebar">
             <div class="brand">
-                <h2>DielineGen Pro</h2>
-                <p>Mailer Box Specification Utility</p>
+                <h2><span class="emoji-icon">&#127800;</span> Spiokoks Dieline Studio</h2>
+                <p id="brand-subtitle">Mailer Box Specification Utility</p>
             </div>
-            
+
+            <div class="mode-switcher">
+                <button type="button" id="mode-box-btn" class="mode-tab mode-tab-active"><span class="emoji-icon">&#128230;</span> Corrugated Box Mode</button>
+                <button type="button" id="mode-bag-btn" class="mode-tab"><span class="emoji-icon">&#128717;&#65039;</span> Paper Bag Mode</button>
+            </div>
+
             <form id="dieline-form" class="control-group">
-                <h3>Dimensions (Inches)</h3>
-                
+                <h3 id="dimensions-heading">Dimensions (Inches)</h3>
+
                 <div class="input-field">
-                    <label for="length">Length (L)</label>
+                    <label for="length" id="label-length">Length (L)</label>
                     <input type="number" id="length" value="8.0" step="0.1" min="2" max="24" required>
                 </div>
 
                 <div class="input-field">
-                    <label for="width">Width (W)</label>
+                    <label for="width" id="label-width">Width (W)</label>
                     <input type="number" id="width" value="6.0" step="0.1" min="2" max="24" required>
                 </div>
 
                 <div class="input-field">
-                    <label for="height">Height (H)</label>
+                    <label for="height" id="label-height">Height (H)</label>
                     <input type="number" id="height" value="3.0" step="0.1" min="1" max="12" required>
+                </div>
+
+                <div class="input-field" id="topfold-field" style="display:none">
+                    <label for="topfold">Top Fold (in)</label>
+                    <input type="number" id="topfold" value="2.0" step="0.1" min="0.25" max="6">
                 </div>
 
                 <button type="button" id="btn-download" class="btn btn-primary">
@@ -42,6 +54,34 @@
                     Download SVG
                 </button>
             </form>
+
+            <div class="control-group" id="cropmarks-field" style="display:none">
+                <h3>Crop Marks</h3>
+                <div class="input-field">
+                    <label for="cm-length">Mark Length (in)</label>
+                    <input type="number" id="cm-length" value="0.25" step="0.01" min="0.05" max="2">
+                </div>
+                <div class="input-field">
+                    <label for="cm-thickness">Thickness (pt)</label>
+                    <input type="number" id="cm-thickness" value="0.5" step="0.1" min="0.1" max="5">
+                </div>
+                <div class="input-field">
+                    <label for="cm-color">Color</label>
+                    <input type="color" id="cm-color" value="#000000">
+                </div>
+                <div class="input-field">
+                    <label for="cm-padding">Padding / Gap (in)</label>
+                    <input type="number" id="cm-padding" value="0.0833" step="0.01" min="0" max="1">
+                </div>
+                <div class="input-field">
+                    <label for="cm-dash-length">Crease Dash Length (pt)</label>
+                    <input type="number" id="cm-dash-length" value="3" step="0.5" min="0.5" max="20">
+                </div>
+                <div class="input-field">
+                    <label for="cm-dash-gap">Crease Dash Gap (pt)</label>
+                    <input type="number" id="cm-dash-gap" value="3" step="0.5" min="0.5" max="20">
+                </div>
+            </div>
 
             <div class="legend-card">
                 <h3>Dieline Key</h3>
@@ -105,7 +145,7 @@
 
         <main class="preview-area">
             <div class="canvas-header">
-                <h3>Live Structural Preview</h3>
+                <h3 id="preview-heading">Live Structural Preview</h3>
                 <span id="dimension-string">8.00" x 6.00" x 3.00"</span>
             </div>
             <div class="canvas-wrapper">
