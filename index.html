@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spiokoks Dieline Studio</title>
+    <link rel="icon" type="image/x-icon" href="Assets/boxy.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
@@ -23,63 +24,64 @@
                 <button type="button" id="mode-bag-btn" class="mode-tab"><span class="emoji-icon">&#128717;&#65039;</span> Paper Bag Mode</button>
             </div>
 
-            <form id="dieline-form" class="control-group">
-                <h3 id="dimensions-heading">Dimensions (Inches)</h3>
-
-                <div class="input-field">
-                    <label for="length" id="label-length">Length (L)</label>
-                    <input type="number" id="length" value="8.0" step="0.1" min="2" max="24" required>
-                </div>
-
-                <div class="input-field">
-                    <label for="width" id="label-width">Width (W)</label>
-                    <input type="number" id="width" value="6.0" step="0.1" min="2" max="24" required>
-                </div>
-
-                <div class="input-field">
-                    <label for="height" id="label-height">Height (H)</label>
-                    <input type="number" id="height" value="3.0" step="0.1" min="1" max="12" required>
-                </div>
-
-                <div class="input-field" id="topfold-field" style="display:none">
-                    <label for="topfold">Top Fold (in)</label>
-                    <input type="number" id="topfold" value="2.0" step="0.1" min="0.25" max="6">
-                </div>
-
-                <button type="button" id="btn-download" class="btn btn-primary">
-                    Download Production PDF
+            <div class="control-group collapsible">
+                <button type="button" class="collapsible-header" data-target="dimensions-content">
+                    <h3 id="dimensions-heading">Dimensions (Inches)</h3>
+                    <span class="chevron">&#9662;</span>
                 </button>
+                <div class="collapsible-content" id="dimensions-content">
+                    <div class="input-field">
+                        <label for="length" id="label-length">Length (L)</label>
+                        <input type="number" id="length" value="8.0" step="0.1" min="2" max="24" required>
+                    </div>
 
-                <button type="button" id="btn-download-svg" class="btn btn-secondary">
-                    Download SVG
+                    <div class="input-field">
+                        <label for="width" id="label-width">Width (W)</label>
+                        <input type="number" id="width" value="6.0" step="0.1" min="2" max="24" required>
+                    </div>
+
+                    <div class="input-field">
+                        <label for="height" id="label-height">Height (H)</label>
+                        <input type="number" id="height" value="3.0" step="0.1" min="1" max="12" required>
+                    </div>
+
+                    <div class="input-field" id="topfold-field" style="display:none">
+                        <label for="topfold">Top Fold (in) - 0 = no top fold</label>
+                        <input type="number" id="topfold" value="2.0" step="0.1" min="0" max="6">
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group collapsible">
+                <button type="button" class="collapsible-header collapsed" data-target="cropmarks-content">
+                    <h3>Crop Marks</h3>
+                    <span class="chevron">&#9662;</span>
                 </button>
-            </form>
-
-            <div class="control-group" id="cropmarks-field" style="display:none">
-                <h3>Crop Marks</h3>
-                <div class="input-field">
-                    <label for="cm-length">Mark Length (in)</label>
-                    <input type="number" id="cm-length" value="0.25" step="0.01" min="0.05" max="2">
-                </div>
-                <div class="input-field">
-                    <label for="cm-thickness">Thickness (pt)</label>
-                    <input type="number" id="cm-thickness" value="0.5" step="0.1" min="0.1" max="5">
-                </div>
-                <div class="input-field">
-                    <label for="cm-color">Color</label>
-                    <input type="color" id="cm-color" value="#000000">
-                </div>
-                <div class="input-field">
-                    <label for="cm-padding">Padding / Gap (in)</label>
-                    <input type="number" id="cm-padding" value="0.0833" step="0.01" min="0" max="1">
-                </div>
-                <div class="input-field">
-                    <label for="cm-dash-length">Crease Dash Length (pt)</label>
-                    <input type="number" id="cm-dash-length" value="3" step="0.5" min="0.5" max="20">
-                </div>
-                <div class="input-field">
-                    <label for="cm-dash-gap">Crease Dash Gap (pt)</label>
-                    <input type="number" id="cm-dash-gap" value="3" step="0.5" min="0.5" max="20">
+                <div class="collapsible-content collapsed" id="cropmarks-content">
+                    <div class="input-field">
+                        <label for="cm-length">Mark Length (in)</label>
+                        <input type="number" id="cm-length" value="0.25" step="0.01" min="0.05" max="2">
+                    </div>
+                    <div class="input-field">
+                        <label for="cm-thickness">Thickness (pt)</label>
+                        <input type="number" id="cm-thickness" value="0.5" step="0.1" min="0.1" max="5">
+                    </div>
+                    <div class="input-field">
+                        <label for="cm-color">Color</label>
+                        <input type="color" id="cm-color" value="#000000">
+                    </div>
+                    <div class="input-field">
+                        <label for="cm-padding">Padding / Gap (in)</label>
+                        <input type="number" id="cm-padding" value="0.0833" step="0.01" min="0" max="1">
+                    </div>
+                    <div class="input-field">
+                        <label for="cm-dash-length">Crease Dash Length (pt)</label>
+                        <input type="number" id="cm-dash-length" value="3" step="0.5" min="0.5" max="20">
+                    </div>
+                    <div class="input-field">
+                        <label for="cm-dash-gap">Crease Dash Gap (pt)</label>
+                        <input type="number" id="cm-dash-gap" value="3" step="0.5" min="0.5" max="20">
+                    </div>
                 </div>
             </div>
 
@@ -97,20 +99,29 @@
                     <button type="button" id="btn-zoom-in" class="btn-icon" title="Zoom In">+</button>
                     <button type="button" id="btn-zoom-reset" class="btn-icon btn-icon-wide" title="Reset View">Reset</button>
                 </div>
+                <div class="zoom-controls" style="margin-top:8px">
+                    <button type="button" id="btn-undo" class="btn-icon" title="Undo">&#8630;</button>
+                    <button type="button" id="btn-redo" class="btn-icon" title="Redo">&#8631;</button>
+                </div>
                 <p class="hint-text">Scroll to zoom. Drag empty space to pan.</p>
             </div>
 
-            <div class="control-group">
-                <h3>Design Elements</h3>
-                <input type="file" id="import-image-input" accept="image/*" style="display:none">
-                <button type="button" id="btn-import-image" class="btn btn-secondary">Import Image</button>
-                <button type="button" id="btn-add-text" class="btn btn-secondary">Add Text</button>
-                <div class="shape-buttons">
-                    <button type="button" id="btn-add-circle" class="btn-icon" title="Add Circle">&#9675;</button>
-                    <button type="button" id="btn-add-rect" class="btn-icon" title="Add Rectangle">&#9645;</button>
-                    <button type="button" id="btn-add-triangle" class="btn-icon" title="Add Triangle">&#9651;</button>
+            <div class="control-group collapsible">
+                <button type="button" class="collapsible-header" data-target="design-elements-content">
+                    <h3>Design Elements</h3>
+                    <span class="chevron">&#9662;</span>
+                </button>
+                <div class="collapsible-content" id="design-elements-content">
+                    <input type="file" id="import-image-input" accept="image/*" style="display:none">
+                    <button type="button" id="btn-import-image" class="btn btn-secondary">Import Image</button>
+                    <button type="button" id="btn-add-text" class="btn btn-secondary">Add Text</button>
+                    <div class="shape-buttons">
+                        <button type="button" id="btn-add-circle" class="btn-icon" title="Add Circle">&#9675;</button>
+                        <button type="button" id="btn-add-rect" class="btn-icon" title="Add Rectangle">&#9645;</button>
+                        <button type="button" id="btn-add-triangle" class="btn-icon" title="Add Triangle">&#9651;</button>
+                    </div>
+                    <p class="hint-text">Drag a shape to move it, drag its corner points to reshape it, or drag the outer handle to scale it proportionally.</p>
                 </div>
-                <p class="hint-text">Drag a shape to move it, drag its corner handles to reshape it.</p>
             </div>
 
             <div class="control-group" id="object-inspector" style="display:none">
@@ -120,8 +131,8 @@
                     <input type="text" id="obj-text-content">
                 </div>
                 <div class="input-field" id="text-size-field" style="display:none">
-                    <label for="obj-font-size">Font Size (in)</label>
-                    <input type="number" id="obj-font-size" step="0.05" min="0.1">
+                    <label for="obj-font-size">Font Size (px)</label>
+                    <input type="number" id="obj-font-size" step="1" min="6">
                 </div>
                 <div class="input-field" id="color-field">
                     <label for="obj-color">Color</label>
@@ -140,6 +151,30 @@
                     </div>
                 </div>
                 <button type="button" id="btn-delete-object" class="btn btn-secondary">Delete Element</button>
+            </div>
+
+            <div class="control-group collapsible">
+                <button type="button" class="collapsible-header" data-target="export-content">
+                    <h3>Export</h3>
+                    <span class="chevron">&#9662;</span>
+                </button>
+                <div class="collapsible-content" id="export-content">
+                    <div class="input-field">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="toggle-dieline" checked>
+                            Show / Include Dieline
+                        </label>
+                        <p class="hint-text">Turn off to export just your designs and crop marks.</p>
+                    </div>
+
+                    <button type="button" id="btn-download" class="btn btn-primary">
+                        Download Production PDF
+                    </button>
+
+                    <button type="button" id="btn-download-svg" class="btn btn-secondary">
+                        Download SVG
+                    </button>
+                </div>
             </div>
         </aside>
 

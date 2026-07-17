@@ -11,7 +11,6 @@ const downloadBtn = document.getElementById('btn-download');
 const downloadSvgBtn = document.getElementById('btn-download-svg');
 
 // --- Crop Mark controls ---
-const cropMarksField = document.getElementById('cropmarks-field');
 const cmLengthInput = document.getElementById('cm-length');
 const cmThicknessInput = document.getElementById('cm-thickness');
 const cmColorInput = document.getElementById('cm-color');
@@ -32,6 +31,14 @@ function getCropMarkSettings() {
 
 [cmLengthInput, cmThicknessInput, cmColorInput, cmPaddingInput, cmDashLengthInput, cmDashGapInput]
     .forEach(el => el.addEventListener('input', render));
+
+// --- Show/Hide Dieline toggle ---
+const toggleDielineInput = document.getElementById('toggle-dieline');
+let showDieline = true;
+toggleDielineInput.addEventListener('change', () => {
+    showDieline = toggleDielineInput.checked;
+    render();
+});
 
 // --- Mode Switcher (Corrugated Box Mode vs Paper Bag Mode) ---
 const modeBoxBtn = document.getElementById('mode-box-btn');
@@ -58,7 +65,6 @@ function setMode(mode) {
         inputHeight.value = 10.0;
         inputTopFold.value = 2.0;
         topFoldField.style.display = 'block';
-        cropMarksField.style.display = 'block';
     } else {
         modeBoxBtn.classList.add('mode-tab-active');
         modeBagBtn.classList.remove('mode-tab-active');
@@ -71,7 +77,6 @@ function setMode(mode) {
         inputWidth.value = 6.0;
         inputHeight.value = 3.0;
         topFoldField.style.display = 'none';
-        cropMarksField.style.display = 'none';
     }
     viewZoom = 1;
     viewPanX = 0;
@@ -377,8 +382,10 @@ function calculateBagGeometry(W, D, H, topFold) {
     // of the top fold straight down to the bottom of the bag.
     [x1, x2, x3, x4].forEach(x => addScoreLine(x, y0, x, y3));
 
-    // Top fold, full width
-    addScoreLine(x0, y1, x5, y1);
+    // Top fold, full width - skipped entirely when topFold is 0 (no top fold)
+    if (topFold > 0.0001) {
+        addScoreLine(x0, y1, x5, y1);
+    }
 
     // Base fold, full width - the line the bottom folds up along
     addScoreLine(x0, y2, x5, y2);
@@ -426,7 +433,9 @@ function calculateBagGeometry(W, D, H, topFold) {
     addScoreLine(cB, y0, cB, y3);
 
     // Dimension callouts
-    dims.push({ x1: x0, y1: -0.3, x2: x1, y2: -0.3, text: `${topFold.toFixed(4)} in` });          // Top fold
+    if (topFold > 0.0001) {
+        dims.push({ x1: x0, y1: -0.3, x2: x1, y2: -0.3, text: `${topFold.toFixed(4)} in` });        // Top fold
+    }
     dims.push({ x1: x1, y1: y1 - 0.3, x2: x2, y2: y1 - 0.3, text: `${W.toFixed(4)} in` });         // Front width
     dims.push({ x1: x2, y1: y1 - 0.3, x2: x3, y2: y1 - 0.3, text: `${D.toFixed(4)} in` });         // Gusset depth
     dims.push({ x1: x1 - 0.3, y1: y1, x2: x1 - 0.3, y2: y2, text: `${H.toFixed(4)} in` });         // Body height
@@ -486,12 +495,22 @@ function computeCropMarkData(geometry) {
 
     geometry.lines.forEach(l => {
         if (l.type !== 'score' || l.shape !== 'line') return;
-        [[l.x1, l.y1], [l.x2, l.y2]].forEach(([x, y]) => {
-            if (Math.abs(y - minY) < eps) topCreases.set(round4(x), true);
-            if (Math.abs(y - maxY) < eps) bottomCreases.set(round4(x), true);
-            if (Math.abs(x - minX) < eps) leftCreases.set(round4(y), true);
-            if (Math.abs(x - maxX) < eps) rightCreases.set(round4(y), true);
-        });
+        const dx = Math.abs(l.x2 - l.x1);
+        const dy = Math.abs(l.y2 - l.y1);
+        if (dy < eps && dx > eps) {
+            // Horizontal fold - its height gets a tick on both side edges,
+            // even if the fold itself doesn't physically reach that far out.
+            const y = round4(l.y1);
+            leftCreases.set(y, true);
+            rightCreases.set(y, true);
+        } else if (dx < eps && dy > eps) {
+            // Vertical fold - its position gets a tick on both top/bottom edges.
+            const x = round4(l.x1);
+            topCreases.set(x, true);
+            bottomCreases.set(x, true);
+        }
+        // Diagonal creases aren't axis-aligned, so there's no clean edge to
+        // project them onto - they're left without a crop-mark tick.
     });
 
     return {
@@ -550,6 +569,98 @@ const layerUpBtn = document.getElementById('btn-layer-up');
 const layerDownBtn = document.getElementById('btn-layer-down');
 const layerBackBtn = document.getElementById('btn-layer-back');
 
+// --- Undo / Redo ---
+const undoBtn = document.getElementById('btn-undo');
+const redoBtn = document.getElementById('btn-redo');
+let historyStack = [];
+let historyIndex = -1;
+let isRestoringHistory = false;
+
+function snapshotDesignObjects() {
+    if (isRestoringHistory) return;
+    historyStack = historyStack.slice(0, historyIndex + 1);
+    const serializable = designObjects.map(o => {
+        const copy = { ...o };
+        delete copy.imgEl; // recreated from src on restore, not JSON-serializable
+        return copy;
+    });
+    historyStack.push(JSON.stringify(serializable));
+    historyIndex++;
+    if (historyStack.length > 50) {
+        historyStack.shift();
+        historyIndex--;
+    }
+    updateUndoRedoButtons();
+}
+
+function restoreFromHistory(index) {
+    isRestoringHistory = true;
+    const snapshot = JSON.parse(historyStack[index]);
+    selectedObjectId = null;
+    objectInspector.style.display = 'none';
+
+    const finish = () => {
+        isRestoringHistory = false;
+        render();
+        updateUndoRedoButtons();
+    };
+
+    const imagesToLoad = snapshot.filter(o => o.type === 'image');
+    designObjects = snapshot;
+    if (imagesToLoad.length === 0) {
+        finish();
+        return;
+    }
+    let remaining = imagesToLoad.length;
+    imagesToLoad.forEach(o => {
+        const img = new Image();
+        img.onload = () => {
+            o.imgEl = img;
+            remaining--;
+            if (remaining === 0) finish();
+        };
+        img.src = o.src;
+    });
+}
+
+function undo() {
+    if (historyIndex <= 0) return;
+    historyIndex--;
+    restoreFromHistory(historyIndex);
+}
+
+function redo() {
+    if (historyIndex >= historyStack.length - 1) return;
+    historyIndex++;
+    restoreFromHistory(historyIndex);
+}
+
+function updateUndoRedoButtons() {
+    undoBtn.disabled = historyIndex <= 0;
+    redoBtn.disabled = historyIndex >= historyStack.length - 1;
+}
+
+undoBtn.addEventListener('click', undo);
+redoBtn.addEventListener('click', redo);
+window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        redo();
+    }
+});
+
+
+// Text sizes are stored in pixels (a common, familiar unit for on-screen
+// text) but everything else in the app works in inches, so this is the
+// single conversion point used everywhere a text object's font size is read.
+const PX_PER_INCH = 96;
+function pxToIn(px) {
+    return px / PX_PER_INCH;
+}
+
 function hexToRgb(hex) {
     const clean = (hex || '#3b82f6').replace('#', '');
     const bigint = parseInt(clean, 16);
@@ -599,6 +710,7 @@ function addDesignObject(obj) {
     obj.id = nextObjectId++;
     designObjects.push(obj);
     selectObject(obj.id);
+    snapshotDesignObjects();
 }
 
 // --- Layer ordering ---
@@ -619,6 +731,7 @@ function moveSelectedLayer(action) {
         [designObjects[idx], designObjects[idx - 1]] = [designObjects[idx - 1], designObjects[idx]];
     }
     render();
+    snapshotDesignObjects();
 }
 layerFrontBtn.addEventListener('click', () => moveSelectedLayer('front'));
 layerUpBtn.addEventListener('click', () => moveSelectedLayer('up'));
@@ -653,7 +766,7 @@ importImageInput.addEventListener('change', (e) => {
 });
 
 addTextBtn.addEventListener('click', () => {
-    addDesignObject({ type: 'text', x: 0, y: 0, text: 'Your Text', fontSize: 0.35, color: '#111827' });
+    addDesignObject({ type: 'text', x: 0, y: 0, text: 'Your Text', fontSize: 32, color: '#111827' });
 });
 
 addCircleBtn.addEventListener('click', () => {
@@ -678,19 +791,23 @@ objColor.addEventListener('input', () => {
     const obj = getSelectedObject();
     if (obj && obj.type !== 'image') { obj.color = objColor.value; render(); }
 });
+objColor.addEventListener('change', snapshotDesignObjects);
 objTextContent.addEventListener('input', () => {
     const obj = getSelectedObject();
     if (obj && obj.type === 'text') { obj.text = objTextContent.value; render(); }
 });
+objTextContent.addEventListener('change', snapshotDesignObjects);
 objFontSize.addEventListener('input', () => {
     const obj = getSelectedObject();
-    if (obj && obj.type === 'text') { obj.fontSize = parseFloat(objFontSize.value) || 0.35; render(); }
+    if (obj && obj.type === 'text') { obj.fontSize = parseFloat(objFontSize.value) || 32; render(); }
 });
+objFontSize.addEventListener('change', snapshotDesignObjects);
 deleteObjectBtn.addEventListener('click', () => {
     designObjects = designObjects.filter(o => o.id !== selectedObjectId);
     selectedObjectId = null;
     objectInspector.style.display = 'none';
     render();
+    snapshotDesignObjects();
 });
 
 // --- Zoom controls ---
@@ -739,8 +856,9 @@ function hitTestObjects(xIn, yIn) {
         } else if (obj.type === 'image') {
             if (Math.abs(xIn - obj.x) <= obj.width / 2 && Math.abs(yIn - obj.y) <= obj.height / 2) return obj;
         } else if (obj.type === 'text') {
-            const halfW = obj.text.length * obj.fontSize * 0.3;
-            if (Math.abs(xIn - obj.x) <= halfW && Math.abs(yIn - obj.y) <= obj.fontSize) return obj;
+            const fontSizeIn = pxToIn(obj.fontSize);
+            const halfW = obj.text.length * fontSizeIn * 0.3;
+            if (Math.abs(xIn - obj.x) <= halfW && Math.abs(yIn - obj.y) <= fontSizeIn) return obj;
         }
     }
     return null;
@@ -750,6 +868,17 @@ function hitTestVertexHandles(xIn, yIn) {
     const obj = getSelectedObject();
     if (!obj) return null;
     if (obj.type === 'rect' || obj.type === 'triangle') {
+        // Proportional scale handle sits outside the shape's own bounding
+        // box, similar to the image's resize handle - drag it to scale the
+        // whole shape uniformly. The individual corner points remain
+        // separately draggable for free-form deforming.
+        const maxAbsX = Math.max(...obj.points.map(p => Math.abs(p.x)));
+        const maxAbsY = Math.max(...obj.points.map(p => Math.abs(p.y)));
+        const rx = obj.x + maxAbsX + 0.25;
+        const ry = obj.y + maxAbsY + 0.25;
+        if (Math.hypot(xIn - rx, yIn - ry) <= HANDLE_HIT_TOLERANCE_IN) {
+            return { kind: 'scale' };
+        }
         for (let i = 0; i < obj.points.length; i++) {
             const p = obj.points[i];
             if (Math.hypot(xIn - (obj.x + p.x), yIn - (obj.y + p.y)) <= HANDLE_HIT_TOLERANCE_IN) {
@@ -790,6 +919,7 @@ canvas.addEventListener('mousedown', (e) => {
         interactionMode = vertexHit.kind === 'radius' ? 'resize-circle'
             : vertexHit.kind === 'resize' ? 'resize-image'
             : vertexHit.kind === 'clip' ? 'clip-vertex'
+            : vertexHit.kind === 'scale' ? 'resize-shape'
             : 'vertex';
         interactionVertexIndex = vertexHit.index;
         interactionStartMouse = { x: xIn, y: yIn };
@@ -848,11 +978,23 @@ window.addEventListener('mousemove', (e) => {
         obj.width = interactionStartObject.width * ratio;
         obj.height = interactionStartObject.height * ratio;
         obj.clipPoints = interactionStartObject.clipPoints.map(p => ({ x: p.x * ratio, y: p.y * ratio }));
+    } else if (interactionMode === 'resize-shape') {
+        // Uniform proportional scale: ratio of the cursor's current distance
+        // from the shape's center vs. its distance when the handle was
+        // grabbed. This scales every point together (unlike dragging an
+        // individual corner, which only moves that one point).
+        const startDist = Math.hypot(interactionStartMouse.x - obj.x, interactionStartMouse.y - obj.y);
+        const currentDist = Math.hypot(xIn - obj.x, yIn - obj.y);
+        const ratio = startDist > 0.0001 ? Math.max(0.1, Math.min(10, currentDist / startDist)) : 1;
+        obj.points = interactionStartObject.points.map(p => ({ x: p.x * ratio, y: p.y * ratio }));
     }
     render();
 });
 
 window.addEventListener('mouseup', () => {
+    if (interactionMode && interactionMode !== 'pan') {
+        snapshotDesignObjects();
+    }
     interactionMode = null;
     interactionVertexIndex = null;
     interactionStartObject = null;
@@ -887,7 +1029,7 @@ function drawDesignObjects(cx, cy, scale) {
             ctx.restore();
         } else if (obj.type === 'text') {
             ctx.fillStyle = obj.color;
-            ctx.font = `${Math.max(8, obj.fontSize * scale)}px -apple-system, sans-serif`;
+            ctx.font = `${Math.max(8, pxToIn(obj.fontSize) * scale)}px -apple-system, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(obj.text, sx, sy);
@@ -926,6 +1068,10 @@ function drawDesignObjects(cx, cy, scale) {
                 ctx.closePath();
                 ctx.stroke();
                 obj.points.forEach(p => drawHandle(sx + p.x * scale, sy + p.y * scale));
+
+                const maxAbsX = Math.max(...obj.points.map(p => Math.abs(p.x)));
+                const maxAbsY = Math.max(...obj.points.map(p => Math.abs(p.y)));
+                drawHandle(sx + (maxAbsX + 0.25) * scale, sy + (maxAbsY + 0.25) * scale); // proportional scale handle
             } else if (obj.type === 'image') {
                 const hw = obj.width * scale / 2, hh = obj.height * scale / 2;
                 ctx.setLineDash([2, 2]);
@@ -946,8 +1092,9 @@ function drawDesignObjects(cx, cy, scale) {
 
                 drawHandle(sx + hw + 0.25 * scale, sy + hh + 0.25 * scale); // resize handle, offset outside the corner
             } else if (obj.type === 'text') {
-                const halfW = obj.text.length * obj.fontSize * scale * 0.3;
-                const halfH = obj.fontSize * scale;
+                const fontSizeIn = pxToIn(obj.fontSize);
+                const halfW = obj.text.length * fontSizeIn * scale * 0.3;
+                const halfH = fontSizeIn * scale;
                 ctx.strokeRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
             }
             ctx.setLineDash([]);
@@ -987,35 +1134,37 @@ function render() {
     const cy = centerY + viewPanY;
 
     // Render CAD Lines
-    geometry.lines.forEach(line => {
-        ctx.beginPath();
-        ctx.moveTo(cx + line.x1 * scale, cy + line.y1 * scale);
+    if (showDieline) {
+        geometry.lines.forEach(line => {
+            ctx.beginPath();
+            ctx.moveTo(cx + line.x1 * scale, cy + line.y1 * scale);
 
-        if (line.shape === 'line') {
-            ctx.lineTo(cx + line.x2 * scale, cy + line.y2 * scale);
-        } else if (line.shape === 'bezier') {
-            ctx.bezierCurveTo(
-                cx + line.cp1x * scale, cy + line.cp1y * scale,
-                cx + line.cp2x * scale, cy + line.cp2y * scale,
-                cx + line.x2 * scale, cy + line.y2 * scale
-            );
-        }
+            if (line.shape === 'line') {
+                ctx.lineTo(cx + line.x2 * scale, cy + line.y2 * scale);
+            } else if (line.shape === 'bezier') {
+                ctx.bezierCurveTo(
+                    cx + line.cp1x * scale, cy + line.cp1y * scale,
+                    cx + line.cp2x * scale, cy + line.cp2y * scale,
+                    cx + line.x2 * scale, cy + line.y2 * scale
+                );
+            }
 
-        if (line.type === 'cut') {
-            ctx.strokeStyle = '#3b82f6';
-            ctx.lineWidth = 1.75;
-            ctx.setLineDash([]);
-        } else if (line.type === 'score') {
-            ctx.strokeStyle = '#ef4444';
-            ctx.lineWidth = 1.25;
-            ctx.setLineDash([5, 4]);
-        } else if (line.type === 'slit') {
-            ctx.strokeStyle = '#22c55e'; // Green locks
-            ctx.lineWidth = 1.75;
-            ctx.setLineDash([]);
-        }
-        ctx.stroke();
-    });
+            if (line.type === 'cut') {
+                ctx.strokeStyle = '#3b82f6';
+                ctx.lineWidth = 1.75;
+                ctx.setLineDash([]);
+            } else if (line.type === 'score') {
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 1.25;
+                ctx.setLineDash([5, 4]);
+            } else if (line.type === 'slit') {
+                ctx.strokeStyle = '#22c55e'; // Green locks
+                ctx.lineWidth = 1.75;
+                ctx.setLineDash([]);
+            }
+            ctx.stroke();
+        });
+    }
 
     // Render Dimension Overlays (like the screenshot)
     ctx.textAlign = 'center';
@@ -1023,55 +1172,55 @@ function render() {
     ctx.setLineDash([]);
     ctx.font = '600 13px -apple-system, sans-serif';
 
-    geometry.dims.forEach(dim => {
-        const sx = cx + dim.x1 * scale;
-        const sy = cy + dim.y1 * scale;
-        const ex = cx + dim.x2 * scale;
-        const ey = cy + dim.y2 * scale;
+    if (showDieline) {
+        geometry.dims.forEach(dim => {
+            const sx = cx + dim.x1 * scale;
+            const sy = cy + dim.y1 * scale;
+            const ex = cx + dim.x2 * scale;
+            const ey = cy + dim.y2 * scale;
 
-        // Line
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(ex, ey);
-        ctx.strokeStyle = '#3b82f6';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        // Arrowheads
-        const drawArrow = (x, y, angle) => {
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.rotate(angle);
+            // Line
             ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(-6, -3);
-            ctx.lineTo(-6, 3);
-            ctx.closePath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(ex, ey);
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Arrowheads
+            const drawArrow = (x, y, angle) => {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(angle);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(-6, -3);
+                ctx.lineTo(-6, 3);
+                ctx.closePath();
+                ctx.fillStyle = '#3b82f6';
+                ctx.fill();
+                ctx.restore();
+            };
+            const angle = Math.atan2(ey - sy, ex - sx);
+            drawArrow(sx, sy, angle + Math.PI);
+            drawArrow(ex, ey, angle);
+
+            // Text with Background Mask
+            const tx = (sx + ex) / 2;
+            const ty = (sy + ey) / 2;
+            const tw = ctx.measureText(dim.text).width;
+
+            ctx.fillStyle = '#111827'; // Dark background match
+            ctx.fillRect(tx - tw / 2 - 6, ty - 12, tw + 12, 24);
+
             ctx.fillStyle = '#3b82f6';
-            ctx.fill();
-            ctx.restore();
-        };
-        const angle = Math.atan2(ey - sy, ex - sx);
-        drawArrow(sx, sy, angle + Math.PI);
-        drawArrow(ex, ey, angle);
-
-        // Text with Background Mask
-        const tx = (sx + ex) / 2;
-        const ty = (sy + ey) / 2;
-        const tw = ctx.measureText(dim.text).width;
-
-        ctx.fillStyle = '#111827'; // Dark background match
-        ctx.fillRect(tx - tw / 2 - 6, ty - 12, tw + 12, 24);
-
-        ctx.fillStyle = '#3b82f6';
-        ctx.fillText(dim.text, tx, ty);
-    });
+            ctx.fillText(dim.text, tx, ty);
+        });
+    }
 
     drawDesignObjects(cx, cy, scale);
 
-    if (currentMode === 'bag') {
-        drawCropMarksCanvas(geometry, cx, cy, scale);
-    }
+    drawCropMarksCanvas(geometry, cx, cy, scale);
 }
 
 /**
@@ -1154,18 +1303,20 @@ function downloadCADVectorPDF() {
     const pdfOffsetX = -minX + (padding / 2);
     const pdfOffsetY = -minY + (padding / 2);
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(0, 0, 0);
-    const pdfTitle = currentMode === 'bag'
-        ? `Paper Bag Dieline (W:${L}" D:${W}" H:${H}")`
-        : `Mailer Box Dieline (${L}" x ${W}" x ${H}")`;
-    doc.text(pdfTitle, padding / 2, 0.6);
+    if (showDieline) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(0, 0, 0);
+        const pdfTitle = currentMode === 'bag'
+            ? `Paper Bag Dieline (W:${L}" D:${W}" H:${H}")`
+            : `Mailer Box Dieline (${L}" x ${W}" x ${H}")`;
+        doc.text(pdfTitle, padding / 2, 0.6);
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
-    doc.text("Scale: 1:1 Accurate Production Template | Blue: Cut Line | Red Dashed: Score Line", padding / 2, 0.85);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
+        doc.text("Scale: 1:1 Accurate Production Template | Blue: Cut Line | Red Dashed: Score Line", padding / 2, 0.85);
+    }
 
     const applyStyle = (type) => {
         if (type === 'cut') {
@@ -1185,27 +1336,29 @@ function downloadCADVectorPDF() {
         doc.setLineCap('round');
     };
 
-    const allChains = [...geometry.cutChains, ...geometry.scoreChains, ...geometry.slitChains];
+    if (showDieline) {
+        const allChains = [...geometry.cutChains, ...geometry.scoreChains, ...geometry.slitChains];
 
-    allChains.forEach(chain => {
-        applyStyle(chain.type);
+        allChains.forEach(chain => {
+            applyStyle(chain.type);
 
-        const segs = chain.ops.map(op => {
-            if (op.shape === 'line') {
-                return [op.x2 - op.x1, op.y2 - op.y1];
-            }
-            return [
-                op.cp1x - op.x1, op.cp1y - op.y1,
-                op.cp2x - op.x1, op.cp2y - op.y1,
-                op.x2 - op.x1, op.y2 - op.y1
-            ];
+            const segs = chain.ops.map(op => {
+                if (op.shape === 'line') {
+                    return [op.x2 - op.x1, op.y2 - op.y1];
+                }
+                return [
+                    op.cp1x - op.x1, op.cp1y - op.y1,
+                    op.cp2x - op.x1, op.cp2y - op.y1,
+                    op.x2 - op.x1, op.y2 - op.y1
+                ];
+            });
+
+            const startX = chain.ops[0].x1 + pdfOffsetX;
+            const startY = chain.ops[0].y1 + pdfOffsetY;
+
+            doc.lines(segs, startX, startY, [1, 1], 'S', chain.closed);
         });
-
-        const startX = chain.ops[0].x1 + pdfOffsetX;
-        const startY = chain.ops[0].y1 + pdfOffsetY;
-
-        doc.lines(segs, startX, startY, [1, 1], 'S', chain.closed);
-    });
+    }
 
     // Design elements (imported images, text, shapes) - placed at their true
     // inch positions, independent of the on-screen zoom/pan.
@@ -1236,7 +1389,7 @@ function downloadCADVectorPDF() {
             }
         } else if (obj.type === 'text') {
             doc.setFont('helvetica', 'normal');
-            doc.setFontSize(obj.fontSize * 72); // inches -> points
+            doc.setFontSize(pxToIn(obj.fontSize) * 72); // px -> inches -> points
             doc.setTextColor(r, g, b);
             doc.text(obj.text, px, py, { align: 'center', baseline: 'middle' });
         } else if (obj.type === 'circle') {
@@ -1255,7 +1408,7 @@ function downloadCADVectorPDF() {
     // Crop marks + crease ticks - Illustrator-style corner marks around the
     // trim edge, plus a shorter tick wherever an internal fold line meets
     // that edge, so the crease positions are visible once trimmed.
-    if (currentMode === 'bag') {
+    {
         const crop = computeCropMarkData(geometry);
         const settings = getCropMarkSettings();
         const gap = settings.paddingIn;
@@ -1337,13 +1490,15 @@ function buildSVGDocument(geometry, L, W, H) {
     ];
 
     let body = '';
-    groups.forEach(({ type, chains }) => {
-        body += `  <g id="${type}-lines">\n`;
-        chains.forEach(chain => {
-            body += `    <path d="${chainToPathD(chain)}" ${styleByType[type]} />\n`;
+    if (showDieline) {
+        groups.forEach(({ type, chains }) => {
+            body += `  <g id="${type}-lines">\n`;
+            chains.forEach(chain => {
+                body += `    <path d="${chainToPathD(chain)}" ${styleByType[type]} />\n`;
+            });
+            body += `  </g>\n`;
         });
-        body += `  </g>\n`;
-    });
+    }
 
     body += '  <g id="design-elements">\n';
     designObjects.forEach((obj, idx) => {
@@ -1359,7 +1514,7 @@ function buildSVGDocument(geometry, L, W, H) {
                 body += `    <image href="${obj.src}" x="${fmt(ox - obj.width / 2)}" y="${fmt(oy - obj.height / 2)}" width="${fmt(obj.width)}" height="${fmt(obj.height)}" />\n`;
             }
         } else if (obj.type === 'text') {
-            body += `    <text x="${fmt(ox)}" y="${fmt(oy)}" fill="${obj.color}" font-size="${fmt(obj.fontSize)}" text-anchor="middle" dominant-baseline="middle">${escapeXml(obj.text)}</text>\n`;
+            body += `    <text x="${fmt(ox)}" y="${fmt(oy)}" fill="${obj.color}" font-size="${fmt(pxToIn(obj.fontSize))}" text-anchor="middle" dominant-baseline="middle">${escapeXml(obj.text)}</text>\n`;
         } else if (obj.type === 'circle') {
             body += `    <circle cx="${fmt(ox)}" cy="${fmt(oy)}" r="${fmt(obj.radius)}" fill="${obj.color}" />\n`;
         } else if (obj.type === 'rect' || obj.type === 'triangle') {
@@ -1369,7 +1524,7 @@ function buildSVGDocument(geometry, L, W, H) {
     });
     body += '  </g>\n';
 
-    if (currentMode === 'bag') {
+    {
         const crop = computeCropMarkData(geometry);
         const settings = getCropMarkSettings();
         const gap = settings.paddingIn;
@@ -1442,5 +1597,19 @@ downloadBtn.addEventListener('click', downloadCADVectorPDF);
 if (downloadSvgBtn) downloadSvgBtn.addEventListener('click', downloadSVG);
 window.addEventListener('resize', resizeCanvas);
 
+// Collapsible sections (Dimensions, Design Elements, Export) - Zoom stays
+// always visible and is intentionally not wired up here.
+document.querySelectorAll('.collapsible-header').forEach(header => {
+    const targetId = header.getAttribute('data-target');
+    const content = document.getElementById(targetId);
+    if (!content) return;
+    header.addEventListener('click', () => {
+        header.classList.toggle('collapsed');
+        content.classList.toggle('collapsed');
+    });
+});
+
 // Init Application Startup Cycle
 resizeCanvas();
+snapshotDesignObjects();
+updateUndoRedoButtons();

@@ -21,6 +21,12 @@
     font-family: 'Nunito', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
+.emoji-icon {
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif;
+    font-style: normal;
+    font-variant-emoji: emoji;
+}
+
 body {
     background-color: var(--bg-app);
     color: var(--text-primary);
@@ -44,6 +50,7 @@ body {
     flex-direction: column;
     gap: 26px;
     overflow-y: auto;
+    min-height: 0;
 }
 
 .brand h2 {
@@ -290,6 +297,16 @@ canvas {
     transform: scale(0.95);
 }
 
+.btn-icon:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.btn-icon:disabled:hover {
+    background-color: white;
+    border-color: var(--border-color);
+}
+
 .btn-icon-wide {
     width: auto;
     padding: 0 12px;
@@ -352,4 +369,73 @@ canvas {
 
 .layer-controls .btn-icon {
     flex: 1;
+}
+
+/* Collapsible sections */
+.collapsible {
+    padding: 0;
+}
+
+.collapsible-header {
+    width: 100%;
+    background: white;
+    border: 2px solid var(--border-color);
+    border-radius: 14px;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.2s, border-color 0.2s, transform 0.1s;
+}
+
+.collapsible-header:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+}
+
+.collapsible-header:active {
+    transform: scale(0.98);
+}
+
+.collapsible-header h3 {
+    margin-bottom: 0 !important;
+}
+
+.collapsible-header .chevron {
+    color: var(--accent-hover);
+    font-size: 0.8rem;
+    transition: transform 0.2s;
+}
+
+.collapsible-header.collapsed .chevron {
+    transform: rotate(-90deg);
+}
+
+.collapsible-content {
+    display: flex;
+    flex-direction: column;
+    padding-top: 15px;
+}
+
+.collapsible-content.collapsed {
+    display: none;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+    cursor: pointer;
 }
