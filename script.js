@@ -1605,6 +1605,324 @@ function downloadSVG() {
     URL.revokeObjectURL(url);
 }
 
+// ==========================================
+// TOP MENU BAR: File menu, Help menu, modals
+// ==========================================
+
+const projectFileNameDisplay = document.getElementById('project-file-name');
+
+document.querySelectorAll('.menu-trigger').forEach(trigger => {
+    trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const targetId = trigger.getAttribute('data-menu');
+        const dropdown = document.getElementById(targetId);
+        const isOpen = dropdown.classList.contains('open');
+        document.querySelectorAll('.menu-dropdown').forEach(d => d.classList.remove('open'));
+        document.querySelectorAll('.menu-trigger').forEach(t => t.classList.remove('menu-open'));
+        if (!isOpen) {
+            dropdown.classList.add('open');
+            trigger.classList.add('menu-open');
+        }
+    });
+});
+window.addEventListener('click', () => {
+    document.querySelectorAll('.menu-dropdown').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.menu-trigger').forEach(t => t.classList.remove('menu-open'));
+});
+
+// --- Modal system ---
+const modalOverlay = document.getElementById('modal-overlay');
+const modalContent = document.getElementById('modal-content');
+const modalCloseBtn = document.getElementById('modal-close');
+
+function showModal(html) {
+    modalContent.innerHTML = html;
+    modalOverlay.classList.add('open');
+}
+function closeModal() {
+    modalOverlay.classList.remove('open');
+}
+modalCloseBtn.addEventListener('click', closeModal);
+modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+const ABOUT_HTML = `
+<h2>&#127800; About Spiokoks Dieline Studio</h2>
+<p class="meta-line">Version 1.0.0</p>
+<p class="meta-line">Created by Juan Salgarino</p>
+<p>Spiokoks Dieline Studio is a browser-based tool for designing production-ready dielines
+for corrugated mailer boxes and flat-bottom paper bags, complete with adjustable crop marks,
+a design layer for your own artwork, and industry-standard PDF/SVG export.</p>
+<p>Everything runs locally in your browser - your dimensions and designs are never uploaded
+to a server.</p>
+<p>Thank you for using Spiokoks! Feedback and bug reports are always welcome.</p>
+`;
+
+const DOCUMENTATION_HTML = `
+<h2>&#128218; Documentation</h2>
+
+<h3>Getting Started</h3>
+<p>Choose a template from the mode switcher at the top of the sidebar: <strong>Corrugated Box Mode</strong>
+for a mailer box dieline, or <strong>Paper Bag Mode</strong> for a flat-bottom paper bag.</p>
+
+<h3>Dimensions</h3>
+<p>Enter your Length/Width/Height (or Width/Gusset/Height for bags) in inches. Paper Bag Mode also
+has a Top Fold input - set it to 0 if you don't want a top fold at all.</p>
+
+<h3>Crop Marks</h3>
+<p>Adjust mark length, thickness, color, padding, and the crease-tick dash pattern. These marks
+appear live in the preview and in both exports.</p>
+
+<h3>Design Elements</h3>
+<ul>
+<li><strong>Import Image</strong> - drag to move, drag the outer handle to resize, drag the orange
+frame's corners to adjust the crop mask.</li>
+<li><strong>Add Text</strong> - type your text and set its size (in pixels) in the Selected Element panel.</li>
+<li><strong>Shapes</strong> - drag any corner point to reshape freely, or drag the outer handle to
+scale the whole shape proportionally.</li>
+<li>Use the Layer Order buttons to bring elements to front/back or nudge them up/down.</li>
+</ul>
+
+<h3>Zoom &amp; Navigation</h3>
+<p>Scroll to zoom in/out, drag empty canvas space to pan. Undo/Redo (or Ctrl/Cmd+Z,
+Ctrl/Cmd+Shift+Z) step back and forward through your design edits.</p>
+
+<h3>Show/Hide Dieline</h3>
+<p>In the Export section, turn off "Show / Include Dieline" to export just your designs and crop
+marks - handy when you only need the artwork layer.</p>
+
+<h3>Saving &amp; Opening Projects</h3>
+<p>Use <strong>File &gt; Save As... (.spks)</strong> to save your entire project - dimensions, crop
+mark settings, and every design element - to a single file you can reopen later with
+<strong>File &gt; Open...</strong> to keep editing.</p>
+
+<h3>Exporting</h3>
+<p>Use <strong>File &gt; Export Production PDF</strong> or <strong>Export SVG</strong> (also available
+in the sidebar's Export section) for print-ready output. The SVG groups everything into three
+layers - Die Line, Design Elements, and Crop Marks - for a clean Adobe Illustrator import.</p>
+`;
+
+const TERMS_HTML = `
+<h2>&#128220; Terms &amp; Conditions</h2>
+<p class="meta-line">Last updated: ${new Date().toLocaleDateString()}</p>
+<p><em>The following is a general, placeholder terms-of-use summary and is not a substitute for
+legal advice - consult a lawyer before relying on this for a public release.</em></p>
+
+<h3>1. Free to Use</h3>
+<p>Spiokoks Dieline Studio is provided free of charge, "as is", without warranty of any kind,
+express or implied.</p>
+
+<h3>2. Advertising</h3>
+<p>This application is supported by advertising (Google AdSense). By using this app, you agree
+to the display of ads as part of the free service.</p>
+
+<h3>3. Supporting the Developer / Removing Ads</h3>
+<p>You can support continued development by donating any amount via GCash. After donating, you
+may check "I've supported via GCash - hide ads on this device" in the sidebar to remove ads
+locally in your browser. This is an honor-system toggle - it is not independently verified, and
+ad removal is stored only on your current device/browser.</p>
+
+<h3>4. No Warranty</h3>
+<p>Dielines generated by this tool are provided for convenience. Always verify dimensions,
+folds, and crop marks against your own production requirements before sending to print. The
+developer is not responsible for print errors, material waste, or losses resulting from use of
+this tool.</p>
+
+<h3>5. Your Content</h3>
+<p>Any images, text, or designs you add stay in your browser and in any .spks/PDF/SVG files you
+save - they are not uploaded to any server by this app.</p>
+
+<h3>6. Changes</h3>
+<p>These terms may be updated as the app evolves. Continued use after changes constitutes
+acceptance of the updated terms.</p>
+`;
+
+document.getElementById('menu-documentation').addEventListener('click', () => showModal(DOCUMENTATION_HTML));
+document.getElementById('menu-about').addEventListener('click', () => showModal(ABOUT_HTML));
+document.getElementById('menu-terms').addEventListener('click', () => showModal(TERMS_HTML));
+
+// --- .spks project save / open ---
+function serializeProjectState() {
+    return {
+        format: 'spks',
+        version: 1,
+        mode: currentMode,
+        dimensions: {
+            a: inputLength.value,
+            b: inputWidth.value,
+            c: inputHeight.value,
+            topFold: inputTopFold.value
+        },
+        cropMarks: {
+            length: cmLengthInput.value,
+            thickness: cmThicknessInput.value,
+            color: cmColorInput.value,
+            padding: cmPaddingInput.value,
+            dashLength: cmDashLengthInput.value,
+            dashGap: cmDashGapInput.value
+        },
+        showDieline: showDieline,
+        view: { zoom: viewZoom, panX: viewPanX, panY: viewPanY },
+        designObjects: designObjects.map(o => {
+            const copy = { ...o };
+            delete copy.imgEl;
+            return copy;
+        })
+    };
+}
+
+function saveProjectAsFile() {
+    const state = serializeProjectState();
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const suggested = (projectFileNameDisplay.textContent || 'my-dieline').replace(/\.spks$/i, '');
+    const name = window.prompt('Save project as (.spks):', suggested) || suggested;
+    const filename = name.replace(/\.spks$/i, '') + '.spks';
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    projectFileNameDisplay.textContent = filename;
+}
+
+function loadProjectFromFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        let state;
+        try {
+            state = JSON.parse(e.target.result);
+        } catch (err) {
+            window.alert('This file could not be read as a valid .spks project.');
+            return;
+        }
+        if (!state || state.format !== 'spks') {
+            window.alert('This does not look like a valid .spks project file.');
+            return;
+        }
+
+        setMode(state.mode === 'bag' ? 'bag' : 'box');
+        if (state.dimensions) {
+            inputLength.value = state.dimensions.a;
+            inputWidth.value = state.dimensions.b;
+            inputHeight.value = state.dimensions.c;
+            if (state.dimensions.topFold !== undefined) inputTopFold.value = state.dimensions.topFold;
+        }
+        if (state.cropMarks) {
+            cmLengthInput.value = state.cropMarks.length;
+            cmThicknessInput.value = state.cropMarks.thickness;
+            cmColorInput.value = state.cropMarks.color;
+            cmPaddingInput.value = state.cropMarks.padding;
+            cmDashLengthInput.value = state.cropMarks.dashLength;
+            cmDashGapInput.value = state.cropMarks.dashGap;
+        }
+        showDieline = state.showDieline !== false;
+        toggleDielineInput.checked = showDieline;
+        if (state.view) {
+            viewZoom = state.view.zoom || 1;
+            viewPanX = state.view.panX || 0;
+            viewPanY = state.view.panY || 0;
+            updateZoomDisplay();
+        }
+
+        const objects = Array.isArray(state.designObjects) ? state.designObjects : [];
+        selectedObjectId = null;
+        objectInspector.style.display = 'none';
+        designObjects = objects;
+        nextObjectId = objects.reduce((max, o) => Math.max(max, o.id || 0), 0) + 1;
+
+        const finish = () => {
+            render();
+            historyStack = [];
+            historyIndex = -1;
+            snapshotDesignObjects();
+            updateUndoRedoButtons();
+            projectFileNameDisplay.textContent = file.name;
+        };
+
+        const imagesToLoad = objects.filter(o => o.type === 'image' && o.src);
+        if (imagesToLoad.length === 0) {
+            finish();
+            return;
+        }
+        let remaining = imagesToLoad.length;
+        imagesToLoad.forEach(o => {
+            const img = new Image();
+            img.onload = () => {
+                o.imgEl = img;
+                remaining--;
+                if (remaining === 0) finish();
+            };
+            img.src = o.src;
+        });
+    };
+    reader.readAsText(file);
+}
+
+function newProject() {
+    if (!window.confirm('Start a new project? Any unsaved changes will be lost.')) return;
+    designObjects = [];
+    selectedObjectId = null;
+    objectInspector.style.display = 'none';
+    setMode('box');
+    showDieline = true;
+    toggleDielineInput.checked = true;
+    projectFileNameDisplay.textContent = 'Untitled Project';
+    historyStack = [];
+    historyIndex = -1;
+    snapshotDesignObjects();
+    updateUndoRedoButtons();
+    render();
+}
+
+const openFileInput = document.getElementById('open-file-input');
+document.getElementById('menu-new').addEventListener('click', newProject);
+document.getElementById('menu-open').addEventListener('click', () => openFileInput.click());
+openFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) loadProjectFromFile(file);
+    e.target.value = '';
+});
+document.getElementById('menu-save').addEventListener('click', saveProjectAsFile);
+document.getElementById('menu-export-pdf').addEventListener('click', downloadCADVectorPDF);
+document.getElementById('menu-export-svg').addEventListener('click', downloadSVG);
+
+// --- Ad space + "supported via GCash" toggle ---
+const adSpaceContainer = document.getElementById('ad-space-container');
+const toggleRemoveAdsInput = document.getElementById('toggle-remove-ads');
+
+function applyAdsPreference() {
+    let removed = false;
+    try {
+        removed = window.localStorage.getItem('spks_ads_removed') === 'true';
+    } catch (e) {
+        // localStorage unavailable (e.g. restrictive browser settings) - default to showing ads
+    }
+    toggleRemoveAdsInput.checked = removed;
+    adSpaceContainer.style.display = removed ? 'none' : 'block';
+}
+
+toggleRemoveAdsInput.addEventListener('change', () => {
+    try {
+        window.localStorage.setItem('spks_ads_removed', toggleRemoveAdsInput.checked ? 'true' : 'false');
+    } catch (e) {
+        // ignore - preference just won't persist across reloads
+    }
+    applyAdsPreference();
+});
+
+applyAdsPreference();
+
+try {
+    if (window.localStorage.getItem('spks_ads_removed') !== 'true') {
+        (window.adsbygoogle = window.adsbygoogle || []).push({});
+    }
+} catch (e) {
+    // AdSense script may be blocked or the placeholder client ID isn't live yet
+}
+
 // Attach operational change tracking updates
 inputLength.addEventListener('input', render);
 inputWidth.addEventListener('input', render);

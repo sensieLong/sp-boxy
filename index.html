@@ -10,8 +10,49 @@
     <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- Google AdSense - replace ca-pub-XXXXXXXXXXXXXXXX with your real publisher ID -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
 </head>
 <body>
+    <header class="app-menubar">
+        <div class="menubar-left">
+            <span class="menubar-logo"><span class="emoji-icon">&#127800;</span> Spiokoks</span>
+
+            <div class="menu-item">
+                <button type="button" class="menu-trigger" data-menu="file-dropdown">File</button>
+                <div class="menu-dropdown" id="file-dropdown">
+                    <button type="button" id="menu-new">&#128196; New Project</button>
+                    <button type="button" id="menu-open">&#128193; Open... (.spks)</button>
+                    <button type="button" id="menu-save">&#128190; Save As... (.spks)</button>
+                    <div class="menu-divider"></div>
+                    <button type="button" id="menu-export-pdf">&#128196; Export Production PDF</button>
+                    <button type="button" id="menu-export-svg">&#128196; Export SVG</button>
+                </div>
+                <input type="file" id="open-file-input" accept=".spks" style="display:none">
+            </div>
+
+            <div class="menu-item">
+                <button type="button" class="menu-trigger" data-menu="help-dropdown">Help</button>
+                <div class="menu-dropdown" id="help-dropdown">
+                    <button type="button" id="menu-documentation">&#128218; Documentation</button>
+                    <button type="button" id="menu-about">&#8505;&#65039; About</button>
+                    <button type="button" id="menu-terms">&#128220; Terms &amp; Conditions</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="menubar-right">
+            <span id="project-file-name" class="project-file-name">Untitled Project</span>
+        </div>
+    </header>
+
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal-box">
+            <button type="button" class="modal-close" id="modal-close">&times;</button>
+            <div class="modal-content" id="modal-content"></div>
+        </div>
+    </div>
+
     <div class="studio-container">
         <aside class="sidebar">
             <div class="brand">
@@ -175,6 +216,26 @@
                         Download SVG
                     </button>
                 </div>
+            </div>
+            <div class="control-group" id="ad-space-container">
+                <div class="ad-space">
+                    <span class="ad-label">Advertisement</span>
+                    <!--
+                        Google AdSense placeholder. Replace ca-pub-XXXXXXXXXXXXXXXX
+                        with your real AdSense publisher ID and the data-ad-slot
+                        with your ad unit ID once your site is approved.
+                    -->
+                    <ins class="adsbygoogle"
+                         style="display:block"
+                         data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+                         data-ad-slot="XXXXXXXXXX"
+                         data-ad-format="auto"
+                         data-full-width-responsive="true"></ins>
+                </div>
+                <label class="checkbox-label" id="remove-ads-label">
+                    <input type="checkbox" id="toggle-remove-ads">
+                    I've supported via GCash - hide ads on this device
+                </label>
             </div>
         </aside>
 
