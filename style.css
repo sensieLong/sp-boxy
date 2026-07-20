@@ -390,6 +390,11 @@ canvas {
     transition: background 0.2s, border-color 0.2s, transform 0.1s;
 }
 
+.collapsible-header:not(.collapsed) {
+    border-radius: 14px 14px 0 0;
+    border-bottom: none;
+}
+
 .collapsible-header:hover {
     background: var(--accent-soft);
     border-color: var(--accent);
@@ -416,7 +421,11 @@ canvas {
 .collapsible-content {
     display: flex;
     flex-direction: column;
-    padding-top: 15px;
+    padding: 15px 16px 16px 16px;
+    border: 2px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 14px 14px;
+    background: rgba(255, 255, 255, 0.45);
 }
 
 .collapsible-content.collapsed {

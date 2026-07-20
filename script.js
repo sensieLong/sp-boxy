@@ -20,12 +20,12 @@ const cmDashGapInput = document.getElementById('cm-dash-gap');
 
 function getCropMarkSettings() {
     return {
-        lengthIn: parseFloat(cmLengthInput.value) || 0.25,
-        thicknessPt: parseFloat(cmThicknessInput.value) || 0.5,
+        lengthIn: numOr(cmLengthInput.value, 0.25),
+        thicknessPt: numOr(cmThicknessInput.value, 0.5),
         color: cmColorInput.value || '#000000',
-        paddingIn: parseFloat(cmPaddingInput.value) || 0.0833,
-        dashLenPt: parseFloat(cmDashLengthInput.value) || 3,
-        dashGapPt: parseFloat(cmDashGapInput.value) || 3
+        paddingIn: numOr(cmPaddingInput.value, 0.0833),
+        dashLenPt: numOr(cmDashLengthInput.value, 3),
+        dashGapPt: numOr(cmDashGapInput.value, 3)
     };
 }
 
@@ -454,7 +454,7 @@ let currentMode = 'box';
 
 function calculateDieline(a, b, c) {
     if (currentMode === 'bag') {
-        const topFold = parseFloat(inputTopFold.value) || 2.0;
+        const topFold = numOr(inputTopFold.value, 2.0);
         return calculateBagGeometry(a, b, c, topFold);
     }
     return calculateBoxGeometry(a, b, c);
@@ -661,6 +661,14 @@ function pxToIn(px) {
     return px / PX_PER_INCH;
 }
 
+// parseFloat(...) || fallback is a common bug: if the user legitimately
+// enters 0, `0 || fallback` evaluates to fallback since 0 is falsy. This
+// helper only falls back on a genuinely invalid (NaN) value.
+function numOr(value, fallback) {
+    const n = parseFloat(value);
+    return isNaN(n) ? fallback : n;
+}
+
 function hexToRgb(hex) {
     const clean = (hex || '#3b82f6').replace('#', '');
     const bigint = parseInt(clean, 16);
@@ -799,7 +807,7 @@ objTextContent.addEventListener('input', () => {
 objTextContent.addEventListener('change', snapshotDesignObjects);
 objFontSize.addEventListener('input', () => {
     const obj = getSelectedObject();
-    if (obj && obj.type === 'text') { obj.fontSize = parseFloat(objFontSize.value) || 32; render(); }
+    if (obj && obj.type === 'text') { obj.fontSize = numOr(objFontSize.value, 32); render(); }
 });
 objFontSize.addEventListener('change', snapshotDesignObjects);
 deleteObjectBtn.addEventListener('click', () => {
@@ -1104,9 +1112,9 @@ function drawDesignObjects(cx, cy, scale) {
 }
 
 function render() {
-    const L = parseFloat(inputLength.value) || 12.4;
-    const W = parseFloat(inputWidth.value) || 7.95;
-    const H = parseFloat(inputHeight.value) || 2.44;
+    const L = numOr(inputLength.value, 12.4);
+    const W = numOr(inputWidth.value, 7.95);
+    const H = numOr(inputHeight.value, 2.44);
 
     dimString.textContent = `${L.toFixed(2)}" x ${W.toFixed(2)}" x ${H.toFixed(2)}"`;
 
@@ -1280,9 +1288,9 @@ function drawCropMarksCanvas(geometry, cx, cy, scale) {
  * continuous, cleanly-editable path in Illustrator instead of fragments.
  */
 function downloadCADVectorPDF() {
-    const L = parseFloat(inputLength.value) || 12.4;
-    const W = parseFloat(inputWidth.value) || 7.95;
-    const H = parseFloat(inputHeight.value) || 2.44;
+    const L = numOr(inputLength.value, 12.4);
+    const W = numOr(inputWidth.value, 7.95);
+    const H = numOr(inputHeight.value, 2.44);
 
     const geometry = calculateDieline(L, W, H);
     const { minX, maxX, minY, maxY } = getBoundingBox(geometry.lines);
@@ -1490,17 +1498,22 @@ function buildSVGDocument(geometry, L, W, H) {
     ];
 
     let body = '';
+
+    // --- Die Line Layer (cut / score / slit) ---
+    body += '  <g id="Die_Line_Layer">\n';
     if (showDieline) {
         groups.forEach(({ type, chains }) => {
-            body += `  <g id="${type}-lines">\n`;
+            body += `    <g id="${type}-lines">\n`;
             chains.forEach(chain => {
-                body += `    <path d="${chainToPathD(chain)}" ${styleByType[type]} />\n`;
+                body += `      <path d="${chainToPathD(chain)}" ${styleByType[type]} />\n`;
             });
-            body += `  </g>\n`;
+            body += `    </g>\n`;
         });
     }
+    body += '  </g>\n';
 
-    body += '  <g id="design-elements">\n';
+    // --- Design Elements Layer (images / text / shapes) ---
+    body += '  <g id="Design_Elements_Layer">\n';
     designObjects.forEach((obj, idx) => {
         const ox = obj.x + offsetX;
         const oy = obj.y + offsetY;
@@ -1524,6 +1537,8 @@ function buildSVGDocument(geometry, L, W, H) {
     });
     body += '  </g>\n';
 
+    // --- Crop Marks Layer (corner marks + crease ticks) ---
+    body += '  <g id="Crop_Marks_Layer">\n';
     {
         const crop = computeCropMarkData(geometry);
         const settings = getCropMarkSettings();
@@ -1535,9 +1550,9 @@ function buildSVGDocument(geometry, L, W, H) {
         const cx = x => x + offsetX;
         const cy = y => y + offsetY;
         const { minX: cMinX, maxX: cMaxX, minY: cMinY, maxY: cMaxY } = crop;
-        const ln = (x1v, y1v, x2v, y2v) => `    <line x1="${fmt(cx(x1v))}" y1="${fmt(cy(y1v))}" x2="${fmt(cx(x2v))}" y2="${fmt(cy(y2v))}" />\n`;
+        const ln = (x1v, y1v, x2v, y2v) => `      <line x1="${fmt(cx(x1v))}" y1="${fmt(cy(y1v))}" x2="${fmt(cx(x2v))}" y2="${fmt(cy(y2v))}" />\n`;
 
-        body += `  <g id="crop-marks" stroke="${settings.color}" stroke-width="${fmt(thicknessIn)}">\n`;
+        body += `    <g id="crop-marks" stroke="${settings.color}" stroke-width="${fmt(thicknessIn)}">\n`;
         body += ln(cMinX - gap - markLen, cMinY, cMinX - gap, cMinY);
         body += ln(cMinX, cMinY - gap - markLen, cMinX, cMinY - gap);
         body += ln(cMaxX + gap, cMinY, cMaxX + gap + markLen, cMinY);
@@ -1546,17 +1561,18 @@ function buildSVGDocument(geometry, L, W, H) {
         body += ln(cMinX, cMaxY + gap, cMinX, cMaxY + gap + markLen);
         body += ln(cMaxX + gap, cMaxY, cMaxX + gap + markLen, cMaxY);
         body += ln(cMaxX, cMaxY + gap, cMaxX, cMaxY + gap + markLen);
-        body += '  </g>\n';
+        body += '    </g>\n';
 
         // Crease marks - same length, color, and thickness as the corner
         // marks; the only difference is the dash pattern.
-        body += `  <g id="crease-marks" stroke="${settings.color}" stroke-width="${fmt(thicknessIn)}" stroke-dasharray="${fmt(dashLenIn)},${fmt(dashGapIn)}">\n`;
+        body += `    <g id="crease-marks" stroke="${settings.color}" stroke-width="${fmt(thicknessIn)}" stroke-dasharray="${fmt(dashLenIn)},${fmt(dashGapIn)}">\n`;
         crop.topCreases.forEach(x => { body += ln(x, cMinY - gap - markLen, x, cMinY - gap); });
         crop.bottomCreases.forEach(x => { body += ln(x, cMaxY + gap, x, cMaxY + gap + markLen); });
         crop.leftCreases.forEach(y => { body += ln(cMinX - gap - markLen, y, cMinX - gap, y); });
         crop.rightCreases.forEach(y => { body += ln(cMaxX + gap, y, cMaxX + gap + markLen, y); });
-        body += '  </g>\n';
+        body += '    </g>\n';
     }
+    body += '  </g>\n';
 
     const svgComment = currentMode === 'bag'
         ? `  <!-- Paper Bag Dieline W:${L}in D:${W}in H:${H}in | Blue: Cut Line | Red Dashed: Score Line -->\n`
@@ -1571,9 +1587,9 @@ function buildSVGDocument(geometry, L, W, H) {
 }
 
 function downloadSVG() {
-    const L = parseFloat(inputLength.value) || 12.4;
-    const W = parseFloat(inputWidth.value) || 7.95;
-    const H = parseFloat(inputHeight.value) || 2.44;
+    const L = numOr(inputLength.value, 12.4);
+    const W = numOr(inputWidth.value, 7.95);
+    const H = numOr(inputHeight.value, 2.44);
 
     const geometry = calculateDieline(L, W, H);
     const svgString = buildSVGDocument(geometry, L, W, H);
