@@ -1280,6 +1280,46 @@ function drawCropMarksCanvas(geometry, cx, cy, scale) {
 }
 
 /**
+ * Saves a Blob to disk, letting the user choose the destination folder when
+ * the browser supports the File System Access API (current Chrome/Edge).
+ * Falls back to a standard anchor-click download (always goes to the
+ * browser's default Downloads folder) on browsers that don't support it,
+ * such as Firefox and Safari.
+ */
+async function saveBlobToDisk(blob, suggestedName, typeDescription, extension) {
+    if (window.showSaveFilePicker) {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName,
+                types: [{
+                    description: typeDescription,
+                    accept: { [blob.type || 'application/octet-stream']: ['.' + extension] }
+                }]
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return;
+        } catch (err) {
+            if (err && err.name === 'AbortError') {
+                // User cancelled the save dialog - don't fall back to an
+                // automatic download they didn't ask for.
+                return;
+            }
+            console.warn('File System Access API save failed, falling back to standard download.', err);
+        }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = suggestedName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+/**
  * jsPDF CAD Export Routine
  * Generates true-to-scale vector line paths. Each chained path (outer trim,
  * each flap, each slot, each score run) is emitted as ONE continuous PDF
@@ -1287,7 +1327,7 @@ function drawCropMarksCanvas(geometry, cx, cy, scale) {
  * subdivision) - so the blue outer cut line comes out as a single,
  * continuous, cleanly-editable path in Illustrator instead of fragments.
  */
-function downloadCADVectorPDF() {
+async function downloadCADVectorPDF() {
     const L = numOr(inputLength.value, 12.4);
     const W = numOr(inputWidth.value, 7.95);
     const H = numOr(inputHeight.value, 2.44);
@@ -1452,7 +1492,8 @@ function downloadCADVectorPDF() {
         crop.rightCreases.forEach(y => doc.line(cx(maxX + gap), cy(y), cx(maxX + gap + markLen), cy(y)));
     }
 
-    doc.save(currentMode === 'bag' ? `Dieline_PaperBag_${L}x${W}x${H}.pdf` : `Dieline_Mailer_${L}x${W}x${H}.pdf`);
+    const pdfFilename = currentMode === 'bag' ? `Dieline_PaperBag_${L}x${W}x${H}.pdf` : `Dieline_Mailer_${L}x${W}x${H}.pdf`;
+    await saveBlobToDisk(doc.output('blob'), pdfFilename, 'PDF Document', 'pdf');
 }
 
 /**
@@ -1586,7 +1627,7 @@ function buildSVGDocument(geometry, L, W, H) {
         `</svg>\n`;
 }
 
-function downloadSVG() {
+async function downloadSVG() {
     const L = numOr(inputLength.value, 12.4);
     const W = numOr(inputWidth.value, 7.95);
     const H = numOr(inputHeight.value, 2.44);
@@ -1595,14 +1636,8 @@ function downloadSVG() {
     const svgString = buildSVGDocument(geometry, L, W, H);
 
     const blob = new Blob([svgString], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = currentMode === 'bag' ? `Dieline_PaperBag_${L}x${W}x${H}.svg` : `Dieline_Mailer_${L}x${W}x${H}.svg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const svgFilename = currentMode === 'bag' ? `Dieline_PaperBag_${L}x${W}x${H}.svg` : `Dieline_Mailer_${L}x${W}x${H}.svg`;
+    await saveBlobToDisk(blob, svgFilename, 'SVG Image', 'svg');
 }
 
 // ==========================================
@@ -1771,20 +1806,13 @@ function serializeProjectState() {
     };
 }
 
-function saveProjectAsFile() {
+async function saveProjectAsFile() {
     const state = serializeProjectState();
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
     const suggested = (projectFileNameDisplay.textContent || 'my-dieline').replace(/\.spks$/i, '');
     const name = window.prompt('Save project as (.spks):', suggested) || suggested;
     const filename = name.replace(/\.spks$/i, '') + '.spks';
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    await saveBlobToDisk(blob, filename, 'Spiokoks Project', 'spks');
     projectFileNameDisplay.textContent = filename;
 }
 
